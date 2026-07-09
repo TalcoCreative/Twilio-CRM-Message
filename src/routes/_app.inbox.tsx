@@ -348,7 +348,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
         if (notifRes?.ok) {
           toast.success(`Invitation dikirim ke ${agentName(agentId)} + notifikasi WhatsApp terkirim.`);
         } else {
-          toast.warning(`Invitation dibuat, tapi WhatsApp tidak terkirim (${notifRes?.skipped || "cek nomor / Fonnte"}).`);
+          toast.warning(`Invitation dibuat, tapi WhatsApp tidak terkirim (${notifRes?.skipped || "cek nomor / Twilio"}).`);
         }
       } catch (e: any) {
         toast.warning(`Invitation dibuat, tapi notifikasi WA gagal: ${e?.message || e}`);
