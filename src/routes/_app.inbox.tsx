@@ -33,11 +33,12 @@ export type Conversation = {
   last_message_at: string | null; last_message_preview: string | null;
   unread_count: number; contact?: Contact;
 };
+type MsgType = "TEXT" | "IMAGE" | "DOCUMENT" | "AUDIO" | "VIDEO" | "VOICE" | "STICKER" | "INTERNAL_NOTE";
 type Message = {
   id: string; conversation_id: string;
   direction: "INBOUND" | "OUTBOUND"; content: string;
   sent_at: string; sent_by_id: string | null; status: string;
-  type: "TEXT" | "IMAGE" | "DOCUMENT" | "AUDIO" | "INTERNAL_NOTE";
+  type: MsgType;
   media_url: string | null;
 };
 type QuickReply = { id: string; name: string; content: string; sort_order: number };
