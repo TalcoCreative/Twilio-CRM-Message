@@ -273,7 +273,7 @@ function FonnteTab() {
     if (!testNumber) { toast.error("Masukkan nomor tujuan"); return; }
     setSending(true);
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/fonnte-send`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/twilio-send`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
       body: JSON.stringify({ target: testNumber, content: testMsg, is_test: true }),
