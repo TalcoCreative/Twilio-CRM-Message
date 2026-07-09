@@ -1007,19 +1007,62 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                       </div>
                     </>
                   )}
+                  {mode === "reply" && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={uploading || recording}>
+                          <Paperclip className="size-3" /> Lampiran
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-1" align="start">
+                        <button type="button" onClick={() => pickFile("IMAGE", "image/*")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <ImageIcon className="size-4" /> Foto
+                        </button>
+                        <button type="button" onClick={() => pickFile("VIDEO", "video/*")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <Film className="size-4" /> Video
+                        </button>
+                        <button type="button" onClick={() => pickFile("AUDIO", "audio/*")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <FileIcon className="size-4" /> Audio
+                        </button>
+                        <button type="button" onClick={() => pickFile("DOCUMENT", ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,application/pdf")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <FileText className="size-4" /> PDF / Dokumen
+                        </button>
+                        <button type="button" onClick={() => pickFile("STICKER", "image/webp,image/png")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <Sticker className="size-4" /> Stiker
+                        </button>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                  <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePicked} />
                 </div>
                 <div className="flex gap-2">
                   <Input value={text} onChange={(e) => setText(e.target.value)}
                     placeholder={mode === "note"
                       ? "Catatan internal — hanya dilihat agent..."
-                      : `Balas sebagai ${agentName(user?.id || null)}...`}
-                    disabled={sending}
+                      : recording ? "Merekam voice note..." : `Balas sebagai ${agentName(user?.id || null)}...`}
+                    disabled={sending || uploading || recording}
                     className={mode === "note" ? "bg-amber-50 dark:bg-amber-500/10 border-amber-300" : ""}
                     autoFocus />
-                  <Button type="submit" disabled={sending || !text.trim()}
+                  {mode === "reply" && (
+                    recording ? (
+                      <Button type="button" onClick={stopVoiceNote} className="bg-rose-500 hover:bg-rose-600 text-white">
+                        <StopCircle className="size-4" />
+                      </Button>
+                    ) : (
+                      <Button type="button" variant="outline" onClick={startVoiceNote} disabled={uploading || sending} title="Rekam voice note">
+                        <Mic className="size-4" />
+                      </Button>
+                    )
+                  )}
+                  <Button type="submit" disabled={sending || uploading || recording || !text.trim()}
                     className={mode === "note" ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}>
 
-                    {sending ? <Loader2 className="size-4 animate-spin" /> :
+                    {sending || uploading ? <Loader2 className="size-4 animate-spin" /> :
                       mode === "note" ? <StickyNote className="size-4" /> : <Send className="size-4" />}
                   </Button>
                 </div>
