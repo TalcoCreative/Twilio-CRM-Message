@@ -907,11 +907,20 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   const senderLabel = out
                     ? (effectiveAgentId ? agentName(effectiveAgentId) : "Sistem")
                     : (active.contact?.full_name || "Pelanggan");
+                  const isSticker = m.type === "STICKER";
                   return (
                     <div key={m.id} className={cn("flex flex-col gap-0.5", out ? "items-end" : "items-start")}>
                       <span className="text-[10px] px-1 text-muted-foreground">
                         {senderLabel}
                       </span>
+                      {isSticker && m.media_url ? (
+                        <div className="max-w-[40%]">
+                          <img src={m.media_url} alt="sticker" className="max-h-40 object-contain" />
+                          <div className="text-[10px] opacity-60 mt-0.5 text-right">
+                            {new Date(m.sent_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                        </div>
+                      ) : (
                       <div className={cn("max-w-[75%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words shadow-sm",
                         out ? "bg-chat-out text-chat-out-foreground rounded-br-sm"
                             : "bg-chat-in text-chat-in-foreground border rounded-bl-sm")}>
@@ -920,8 +929,14 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                             <img src={m.media_url} alt="attachment" className="max-h-64 rounded-lg object-cover" />
                           </a>
                         )}
-                        {m.media_url && m.type === "AUDIO" && (
-                          <audio src={m.media_url} controls className="max-w-full mb-1" />
+                        {m.media_url && m.type === "VIDEO" && (
+                          <video src={m.media_url} controls className="max-h-64 rounded-lg mb-1 max-w-full" />
+                        )}
+                        {m.media_url && (m.type === "AUDIO" || m.type === "VOICE") && (
+                          <div className="flex items-center gap-2 mb-1">
+                            {m.type === "VOICE" && <Mic className="size-3.5 shrink-0 opacity-70" />}
+                            <audio src={m.media_url} controls className="max-w-full" />
+                          </div>
                         )}
                         {m.media_url && m.type === "DOCUMENT" && (
                           <a href={m.media_url} target="_blank" rel="noreferrer"
@@ -938,6 +953,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                           {new Date(m.sent_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                         </div>
                       </div>
+                      )}
                     </div>
                   );
                 })}
