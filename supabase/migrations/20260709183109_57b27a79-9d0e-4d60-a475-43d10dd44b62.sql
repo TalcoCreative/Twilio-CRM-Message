@@ -1,0 +1,1 @@
+DELETE FROM public.contacts WHERE whatsapp_number = '6280000012345' AND full_name = 'Lovable Probe';
