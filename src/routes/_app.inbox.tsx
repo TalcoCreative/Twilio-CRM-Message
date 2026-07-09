@@ -253,7 +253,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     }
 
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fonnte-send`, {
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/twilio-send`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
       body: JSON.stringify({ conversation_id: activeId, content }),
@@ -348,7 +348,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
         if (notifRes?.ok) {
           toast.success(`Invitation dikirim ke ${agentName(agentId)} + notifikasi WhatsApp terkirim.`);
         } else {
-          toast.warning(`Invitation dibuat, tapi WhatsApp tidak terkirim (${notifRes?.skipped || "cek nomor / Fonnte"}).`);
+          toast.warning(`Invitation dibuat, tapi WhatsApp tidak terkirim (${notifRes?.skipped || "cek nomor / Twilio"}).`);
         }
       } catch (e: any) {
         toast.warning(`Invitation dibuat, tapi notifikasi WA gagal: ${e?.message || e}`);

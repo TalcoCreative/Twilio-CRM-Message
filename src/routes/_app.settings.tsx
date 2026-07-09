@@ -241,7 +241,7 @@ function FonnteTab() {
     }
     setSaving(true);
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/save-fonnte-settings`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/twilio-settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
       body: JSON.stringify({ account_sid: accountSid, auth_token: authToken, whatsapp_from: whatsappFrom }),
@@ -257,7 +257,7 @@ function FonnteTab() {
     if (!accountSid || !authToken) { toast.error("Masukkan Account SID & Auth Token"); return; }
     setTesting(true);
     setTestResult(null);
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/fonnte-test`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/twilio-test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ account_sid: accountSid, auth_token: authToken }),
@@ -273,7 +273,7 @@ function FonnteTab() {
     if (!testNumber) { toast.error("Masukkan nomor tujuan"); return; }
     setSending(true);
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/fonnte-send`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/twilio-send`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
       body: JSON.stringify({ target: testNumber, content: testMsg, is_test: true }),
@@ -344,7 +344,7 @@ function FonnteTab() {
                     <AlertDialogCancel>Batal</AlertDialogCancel>
                     <AlertDialogAction onClick={async () => {
                       const { data: { session } } = await supabase.auth.getSession();
-                      const res = await fetch(`${SUPABASE_URL}/functions/v1/save-fonnte-settings`, {
+                      const res = await fetch(`${SUPABASE_URL}/functions/v1/twilio-settings`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
                         body: JSON.stringify({ account_sid: "", auth_token: "", whatsapp_from: "" }),
@@ -397,22 +397,36 @@ function FonnteTab() {
 }
 
 function WebhookTab() {
-  const url = `${SUPABASE_URL}/functions/v1/fonnte-webhook`;
+  const inboundUrl = `${SUPABASE_URL}/functions/v1/twilio-webhook`;
+  const statusUrl = `${SUPABASE_URL}/functions/v1/twilio-status`;
   return (
     <Card className="mt-4">
       <CardHeader>
         <CardTitle>Webhook URL untuk Twilio WhatsApp</CardTitle>
         <CardDescription>
-          Copy URL ini ke <strong>Twilio Console → Messaging → WhatsApp Sender / Sandbox → "When a message comes in"</strong>, method <em>POST</em>. Untuk status callback, pasang URL yang sama di kolom "Status callback URL".
+          Di <strong>Twilio Console → Messaging → Senders / Sandbox</strong>, isi field <em>"When a message comes in"</em> dengan URL Inbound, dan <em>"Status callback URL"</em> dengan URL Status. Metode <strong>POST</strong>.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex gap-2">
-          <Input readOnly value={url} className="font-mono text-xs" />
-          <Button variant="outline" onClick={() => { navigator.clipboard.writeText(url); toast.success("Disalin"); }}>
-            <Copy className="size-4" />
-          </Button>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Inbound Webhook (When a message comes in)</Label>
+          <div className="flex gap-2">
+            <Input readOnly value={inboundUrl} className="font-mono text-xs" />
+            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(inboundUrl); toast.success("Disalin"); }}>
+              <Copy className="size-4" />
+            </Button>
+          </div>
         </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Status Callback URL</Label>
+          <div className="flex gap-2">
+            <Input readOnly value={statusUrl} className="font-mono text-xs" />
+            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(statusUrl); toast.success("Disalin"); }}>
+              <Copy className="size-4" />
+            </Button>
+          </div>
+        </div>
+
         <div className="text-xs text-muted-foreground space-y-1">
           <p>✅ Pesan masuk otomatis bikin/lookup kontak + conversation.</p>
           <p>✅ Media (gambar/audio/dokumen) otomatis diunduh & disimpan.</p>

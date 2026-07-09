@@ -1,5 +1,10 @@
 project_id = "idoqnwlpdckywyuzdeys"
 
-[functions.fonnte-webhook]
+[functions.twilio-webhook]
 verify_jwt = false
 
+[functions.twilio-status]
+verify_jwt = false
+
+[functions.twilio-test]
+verify_jwt = false
