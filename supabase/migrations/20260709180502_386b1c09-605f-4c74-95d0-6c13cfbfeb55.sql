@@ -1,0 +1,3 @@
+ALTER TYPE public.message_type ADD VALUE IF NOT EXISTS 'VIDEO';
+ALTER TYPE public.message_type ADD VALUE IF NOT EXISTS 'VOICE';
+ALTER TYPE public.message_type ADD VALUE IF NOT EXISTS 'STICKER';
