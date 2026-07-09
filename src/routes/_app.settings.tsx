@@ -241,7 +241,7 @@ function FonnteTab() {
     }
     setSaving(true);
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/save-fonnte-settings`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/twilio-settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
       body: JSON.stringify({ account_sid: accountSid, auth_token: authToken, whatsapp_from: whatsappFrom }),
