@@ -1,4 +1,5 @@
-// Test Fonnte API key validity by calling /validate
+// Test Twilio credential validity by fetching Account resource.
+// Kept at path "fonnte-test" for frontend backward-compat.
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -7,29 +8,18 @@ const corsHeaders = {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const j = (d: any, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   try {
-    const { api_key } = await req.json();
-    if (!api_key) {
-      return new Response(JSON.stringify({ ok: false, error: "api_key required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    // Fonnte: GET https://api.fonnte.com/validate with header Authorization: <token>
-    const res = await fetch("https://api.fonnte.com/validate", {
-      method: "GET",
-      headers: { Authorization: api_key },
+    const { account_sid, auth_token } = await req.json();
+    if (!account_sid || !auth_token) return j({ ok: false, error: "account_sid & auth_token required" }, 400);
+    const basic = btoa(`${account_sid}:${auth_token}`);
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(account_sid)}.json`, {
+      headers: { Authorization: `Basic ${basic}` },
     });
     const text = await res.text();
-    let data: any;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    return new Response(JSON.stringify({ ok: res.ok && data?.status !== false, status: res.status, data }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    let data: any; try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    return j({ ok: res.ok, status: res.status, data });
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return j({ ok: false, error: String(e) }, 500);
   }
 });
