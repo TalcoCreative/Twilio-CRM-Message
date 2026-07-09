@@ -32,6 +32,10 @@ const STATUS_MAP: Record<string, string> = {
   failed: "FAILED", undelivered: "FAILED",
 };
 
+function isUniqueViolation(error: any) {
+  return error?.code === "23505" || String(error?.message || "").toLowerCase().includes("duplicate key");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
   if (req.method === "GET") {
@@ -75,21 +79,22 @@ Deno.serve(async (req) => {
 
     const messageSid = String(payload.MessageSid || payload.SmsSid || "");
     const messageStatus = String(payload.MessageStatus || payload.SmsStatus || "").toLowerCase();
+    const from = payload.From;
+    const rawMessage = String(payload.Body || "");
+    const message = rawMessage.trim();
+    const waName = (payload.ProfileName || "").toString().trim() || null;
+    const numMedia = Number(payload.NumMedia || 0);
 
-    // Status callback fallback (if shared URL)
-    if (messageStatus && !payload.Body && !payload.NumMedia && !payload.From) {
+    // Status callback fallback (if shared URL). Twilio status callbacks can
+    // include From/To, so classify by absence of real inbound content instead
+    // of From. This prevents delivery receipts from being saved as fake chats.
+    if (messageStatus && !rawMessage && numMedia === 0) {
       if (messageSid) {
         const mapped = STATUS_MAP[messageStatus];
         if (mapped) await admin.from("messages").update({ status: mapped }).eq("fonnte_message_id", messageSid);
       }
       return jsonResponse({ success: true, kind: "status-callback", messageStatus });
     }
-
-    const from = payload.From;
-    const rawMessage = String(payload.Body || "");
-    const message = rawMessage.trim();
-    const waName = (payload.ProfileName || "").toString().trim() || null;
-    const numMedia = Number(payload.NumMedia || 0);
 
     if (!from) return jsonResponse({ success: false, error: "no From" }, 400);
 
@@ -109,7 +114,8 @@ Deno.serve(async (req) => {
       const agentPhones = new Set((agentMatch || []).map((a: any) => normalizePhone(String(a.phone))));
       if (agentPhones.has(contactNumber)) return jsonResponse({ success: true, skip: "agent-phone" });
 
-      const { data: defaultStage } = await admin.from("stages").select("id").eq("is_default", true).maybeSingle();
+      const { data: defaultStage } = await admin.from("stages").select("id")
+        .eq("is_default", true).order("order_index", { ascending: true }).limit(1).maybeSingle();
 
       // Ads content code detection
       let contentCodeId: string | null = null;
@@ -132,14 +138,25 @@ Deno.serve(async (req) => {
         }
       }
 
-      const { data: newC } = await admin.from("contacts").insert({
+      const { data: newC, error: newContactError } = await admin.from("contacts").insert({
         whatsapp_number: contactNumber, full_name: waName,
         stage_id: defaultStage?.id || null,
         source, content_code_id: contentCodeId,
         interested_product_id: contentProductId,
         last_interaction_at: new Date().toISOString(), total_messages: 0,
       }).select().single();
-      contact = newC!;
+      if (newContactError) {
+        if (isUniqueViolation(newContactError)) {
+          const { data: existingContact, error: existingContactError } = await admin.from("contacts")
+            .select("*").eq("whatsapp_number", contactNumber).maybeSingle();
+          if (existingContactError || !existingContact) throw existingContactError || newContactError;
+          contact = existingContact;
+        } else {
+          throw newContactError;
+        }
+      } else {
+        contact = newC!;
+      }
     } else if (!contact.full_name && waName) {
       await admin.from("contacts").update({ full_name: waName }).eq("id", contact.id);
       contact.full_name = waName;
@@ -147,12 +164,13 @@ Deno.serve(async (req) => {
 
     let { data: conv } = await admin.from("conversations").select("*")
       .eq("contact_id", contact.id).eq("status", "OPEN")
-      .order("created_at", { ascending: false }).maybeSingle();
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!conv) {
-      const { data: newConv } = await admin.from("conversations").insert({
+      const { data: newConv, error: newConvError } = await admin.from("conversations").insert({
         contact_id: contact.id, status: "OPEN",
         first_inbound_at: new Date().toISOString(),
       }).select().single();
+      if (newConvError) throw newConvError;
       conv = newConv!;
     }
 
@@ -197,31 +215,41 @@ Deno.serve(async (req) => {
     }
 
     const msgType = storedMediaUrl ? detectMediaType(mediaMime, storedMediaUrl) : "TEXT";
+    const nowIso = new Date().toISOString();
+    const preview = (message || (storedMediaUrl ? "(attachment)" : "Pesan masuk")).slice(0, 100);
     const insert: any = {
       conversation_id: conv.id, direction: "INBOUND", type: msgType,
-      content: message || (storedMediaUrl ? "(attachment)" : ""),
+      content: message || (storedMediaUrl ? "(attachment)" : "Pesan masuk"),
       status: "DELIVERED", media_url: storedMediaUrl,
+      sent_at: nowIso,
     };
     if (messageSid) insert.fonnte_message_id = messageSid;
-    await admin.from("messages").insert(insert);
+    const { error: msgError } = await admin.from("messages").insert(insert);
+    if (msgError) {
+      if (isUniqueViolation(msgError)) return jsonResponse({ success: true, skip: "duplicate-id" });
+      throw msgError;
+    }
 
-    await admin.from("conversations").update({
-      last_message_at: new Date().toISOString(),
-      last_message_preview: (message || "(attachment)").slice(0, 100),
+    const { error: convUpdateError } = await admin.from("conversations").update({
+      last_message_at: nowIso,
+      last_message_preview: preview,
       unread_count: (conv.unread_count || 0) + 1,
-      first_inbound_at: conv.first_inbound_at || new Date().toISOString(),
+      first_inbound_at: conv.first_inbound_at || nowIso,
     }).eq("id", conv.id);
+    if (convUpdateError) throw convUpdateError;
 
-    await admin.from("contacts").update({
-      last_interaction_at: new Date().toISOString(),
+    const { error: contactUpdateError } = await admin.from("contacts").update({
+      last_interaction_at: nowIso,
       total_messages: (contact.total_messages || 0) + 1,
     }).eq("id", contact.id);
+    if (contactUpdateError) throw contactUpdateError;
 
     if (contact.chatbot_state !== "done" && activeWorkflowId && message) {
       await runWorkflow(admin, contact, message, conv.id, activeWorkflowId, cfg);
     }
 
-    return jsonResponse({ success: true });
+    console.log(`[twilio-webhook] inbound saved sid=${messageSid || "-"} contact=${contact.id} conv=${conv.id} type=${msgType}`);
+    return jsonResponse({ success: true, conversation_id: conv.id });
   } catch (e) {
     console.error("[twilio-webhook] fatal", e);
     return jsonResponse({ success: false, error: String(e), twilio_message: TWILIO_ERROR_CODES["500"] }, 500);

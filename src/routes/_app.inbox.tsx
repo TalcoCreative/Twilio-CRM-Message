@@ -109,6 +109,19 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
   useEffect(() => { loadConversations(); loadMeta(); }, [mineOnly, user?.id]);
 
+  useEffect(() => {
+    const refresh = () => loadConversations();
+    const interval = window.setInterval(refresh, 8_000);
+    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [mineOnly, user?.id]);
+
   // Auto-select conversation from ?c= query param
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -170,12 +183,15 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
   useEffect(() => {
     if (!activeId) { setMessages([]); return; }
-    (async () => {
+    const loadActiveMessages = async () => {
       const { data } = await supabase.from("messages").select("*")
         .eq("conversation_id", activeId).order("sent_at", { ascending: true });
       setMessages((data as any) || []);
       await supabase.from("conversations").update({ unread_count: 0 }).eq("id", activeId);
-    })();
+    };
+    loadActiveMessages();
+    const interval = window.setInterval(loadActiveMessages, 8_000);
+    return () => window.clearInterval(interval);
   }, [activeId]);
 
   useEffect(() => {
