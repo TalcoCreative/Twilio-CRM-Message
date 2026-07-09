@@ -4,7 +4,7 @@
 // Status callbacks live in /functions/v1/twilio-status but this endpoint
 // tolerates status posts too (for setups that share a single URL).
 import {
-  CORS_HEADERS, jsonResponse, loadTwilioConfig, makeAdmin, getEnv,
+  CORS_HEADERS, jsonResponse, loadTwilioConfig, makeAdmin, getEnv, buildTwilioSignatureUrls,
   normalizePhone, twilioSendMessage, validateTwilioSignature, TWILIO_ERROR_CODES,
 } from "../_shared/twilio.ts";
 
@@ -52,21 +52,10 @@ Deno.serve(async (req) => {
     const signature = req.headers.get("x-twilio-signature") || "";
     const skipVerify = (getEnv("TWILIO_SKIP_SIGNATURE") || "").toLowerCase() === "true";
     if (cfg.authToken && signature && !skipVerify) {
-      // Twilio signs the exact public URL configured in the console. Behind
-      // Supabase's proxy req.url can be http://<ref>.supabase.co/twilio-webhook
-      // (missing scheme + /functions/v1 prefix), so try several candidates.
-      const orig = new URL(req.url);
-      const proto = req.headers.get("x-forwarded-proto") || "https";
-      const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || orig.host;
-      const path = orig.pathname.startsWith("/functions/v1/")
-        ? orig.pathname
-        : `/functions/v1${orig.pathname}`;
-      const candidates = Array.from(new Set([
-        `${proto}://${host}${path}${orig.search}`,
-        `https://${host}${path}${orig.search}`,
-        `${proto}://${host}${orig.pathname}${orig.search}`,
-        req.url,
-      ]));
+      // Twilio signs the exact public URL configured in the console. The edge
+      // runtime can expose a rewritten edge-runtime URL, so also try the
+      // canonical backend URL from env plus proxy header variants.
+      const candidates = buildTwilioSignatureUrls(req, "twilio-webhook");
       let valid = false;
       for (const url of candidates) {
         if (await validateTwilioSignature({ authToken: cfg.authToken, url, params: payload, signature })) {

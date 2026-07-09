@@ -1,7 +1,7 @@
 // Twilio Programmable Messaging — dedicated delivery status callback.
 // Endpoint: POST /functions/v1/twilio-status
 import {
-  CORS_HEADERS, jsonResponse, loadTwilioConfig, makeAdmin, getEnv, validateTwilioSignature,
+  CORS_HEADERS, jsonResponse, loadTwilioConfig, makeAdmin, getEnv, buildTwilioSignatureUrls, validateTwilioSignature,
 } from "../_shared/twilio.ts";
 
 const STATUS_MAP: Record<string, string> = {
@@ -32,16 +32,7 @@ Deno.serve(async (req) => {
     const signature = req.headers.get("x-twilio-signature") || "";
     const skipVerify = (getEnv("TWILIO_SKIP_SIGNATURE") || "").toLowerCase() === "true";
     if (cfg.authToken && signature && !skipVerify) {
-      const orig = new URL(req.url);
-      const proto = req.headers.get("x-forwarded-proto") || "https";
-      const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || orig.host;
-      const path = orig.pathname.startsWith("/functions/v1/") ? orig.pathname : `/functions/v1${orig.pathname}`;
-      const candidates = Array.from(new Set([
-        `${proto}://${host}${path}${orig.search}`,
-        `https://${host}${path}${orig.search}`,
-        `${proto}://${host}${orig.pathname}${orig.search}`,
-        req.url,
-      ]));
+      const candidates = buildTwilioSignatureUrls(req, "twilio-status");
       let valid = false;
       for (const url of candidates) {
         if (await validateTwilioSignature({ authToken: cfg.authToken, url, params: payload, signature })) {
