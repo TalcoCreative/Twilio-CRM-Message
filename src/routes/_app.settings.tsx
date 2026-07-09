@@ -397,16 +397,36 @@ function FonnteTab() {
 }
 
 function WebhookTab() {
-  const url = `${SUPABASE_URL}/functions/v1/fonnte-webhook`;
+  const inboundUrl = `${SUPABASE_URL}/functions/v1/twilio-webhook`;
+  const statusUrl = `${SUPABASE_URL}/functions/v1/twilio-status`;
   return (
     <Card className="mt-4">
       <CardHeader>
         <CardTitle>Webhook URL untuk Twilio WhatsApp</CardTitle>
         <CardDescription>
-          Copy URL ini ke <strong>Twilio Console → Messaging → WhatsApp Sender / Sandbox → "When a message comes in"</strong>, method <em>POST</em>. Untuk status callback, pasang URL yang sama di kolom "Status callback URL".
+          Di <strong>Twilio Console → Messaging → Senders / Sandbox</strong>, isi field <em>"When a message comes in"</em> dengan URL Inbound, dan <em>"Status callback URL"</em> dengan URL Status. Metode <strong>POST</strong>.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Inbound Webhook (When a message comes in)</Label>
+          <div className="flex gap-2">
+            <Input readOnly value={inboundUrl} className="font-mono text-xs" />
+            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(inboundUrl); toast.success("Disalin"); }}>
+              <Copy className="size-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Status Callback URL</Label>
+          <div className="flex gap-2">
+            <Input readOnly value={statusUrl} className="font-mono text-xs" />
+            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(statusUrl); toast.success("Disalin"); }}>
+              <Copy className="size-4" />
+            </Button>
+          </div>
+        </div>
+
         <div className="flex gap-2">
           <Input readOnly value={url} className="font-mono text-xs" />
           <Button variant="outline" onClick={() => { navigator.clipboard.writeText(url); toast.success("Disalin"); }}>
