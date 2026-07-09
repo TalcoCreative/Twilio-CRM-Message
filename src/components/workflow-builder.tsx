@@ -149,6 +149,7 @@ export function WorkflowBuilderTab() {
             <CardTitle>Dynamic Workflow Builder</CardTitle>
             <CardDescription>Bangun alur chatbot inbound (greeting, pertanyaan, mapping) dengan drag & drop. Versioning, draft, publish, enable/disable didukung penuh.</CardDescription>
           </div>
+          <Button variant="outline" onClick={createLeadsPreset}><FileText className="size-4 mr-1" />Preset Leads</Button>
           <Button onClick={createWorkflow}><Plus className="size-4 mr-1" />Workflow Baru</Button>
         </CardHeader>
         <CardContent>
