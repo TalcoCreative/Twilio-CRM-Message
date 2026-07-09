@@ -42,10 +42,10 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const {
       conversation_id, content, target, is_test,
-      media_path, media_filename,
+      media_path, media_filename, message_type,
     } = body as {
       conversation_id?: string; content?: string; target?: string; is_test?: boolean;
-      media_path?: string; media_filename?: string;
+      media_path?: string; media_filename?: string; message_type?: MsgType;
     };
     if (!content && !media_path) {
       return jsonResponse({ success: false, error: "content or attachment required" }, 400);
