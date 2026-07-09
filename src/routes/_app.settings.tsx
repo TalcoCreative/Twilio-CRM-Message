@@ -257,7 +257,7 @@ function FonnteTab() {
     if (!accountSid || !authToken) { toast.error("Masukkan Account SID & Auth Token"); return; }
     setTesting(true);
     setTestResult(null);
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/fonnte-test`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/twilio-test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ account_sid: accountSid, auth_token: authToken }),
