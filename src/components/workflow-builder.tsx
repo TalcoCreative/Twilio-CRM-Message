@@ -44,6 +44,36 @@ export function WorkflowBuilderTab() {
     loadList();
   }
 
+  async function createLeadsPreset() {
+    if (!confirm("Buat workflow preset 'Onboarding Leads' — mengumpulkan Nama, Domisili, Produk, Estimasi Revenue, Keluhan, lalu simpan ke /leads. Lanjutkan?")) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: wf, error } = await supabase.from("workflows").insert({
+      name: "Onboarding Leads", description: "Preset: kumpulkan data lead lengkap → langsung tampil di halaman /leads",
+      status: "draft", version: 1, is_enabled: true, created_by: user?.id || null,
+    }).select().single();
+    if (error) return toast.error(error.message);
+
+    const steps = [
+      { type: "message",    label: "Salam Pembuka",  prompt: "Halo 👋 Terima kasih sudah menghubungi kami. Saya akan bantu catat kebutuhan Anda sebentar ya.", config: {}, mapping: null },
+      { type: "input_text", label: "Nama Lengkap",   prompt: "Boleh saya tahu nama lengkap Anda?", config: {}, mapping: "contacts.full_name" },
+      { type: "input_text", label: "Domisili",       prompt: "Domisili Anda di kota apa?", config: {}, mapping: "contacts.domicile" },
+      { type: "dropdown",   label: "Produk Diminati",prompt: "Produk/layanan mana yang Anda minati? (ketik nomornya)", config: { source: "products" }, mapping: "contacts.interested_product_id" },
+      { type: "number",     label: "Estimasi Budget",prompt: "Berapa estimasi budget/nilai kebutuhan Anda? (angka saja, contoh: 5000000)", config: {}, mapping: "contacts.estimated_revenue" },
+      { type: "textarea",   label: "Keluhan/Kebutuhan", prompt: "Ceritakan singkat keluhan atau kebutuhan Anda:", config: {}, mapping: "contacts.chief_complaint" },
+      { type: "closing",    label: "Penutup",        prompt: "Terima kasih! Data Anda sudah kami terima. Tim kami akan segera menghubungi Anda. 🙏", config: {}, mapping: null },
+    ];
+    const rows = steps.map((s, i) => ({ workflow_id: wf!.id, position: i, ...s }));
+    const { error: sErr } = await supabase.from("workflow_steps").insert(rows);
+    if (sErr) { toast.error(sErr.message); return; }
+
+    // auto publish + set active
+    await supabase.from("workflows").update({ status: "published", published_at: new Date().toISOString() }).eq("id", wf!.id);
+    await supabase.from("system_settings").upsert({ key: "active_workflow_id", value: wf!.id });
+    toast.success("Workflow preset 'Onboarding Leads' dibuat, dipublish & diaktifkan");
+    setEditing({ ...(wf as any), status: "published", published_at: new Date().toISOString() });
+    loadList();
+  }
+
   async function duplicate(w: Workflow) {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: clone, error } = await supabase.from("workflows").insert({
