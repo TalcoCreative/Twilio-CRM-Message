@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
       ? Math.max(0, Math.floor((Date.now() - new Date(lastIn.sent_at).getTime()) / 1000))
       : null;
 
-    const msgType = mediaUrl ? detectMediaType(media_path || "") : "TEXT";
+    const msgType = message_type || (mediaUrl ? detectMediaType(media_path || "") : "TEXT");
     const { data: msg, error: insErr } = await admin.from("messages").insert({
       conversation_id: convId, direction: "OUTBOUND", type: msgType,
       content: content || (media_filename || "(attachment)"),
