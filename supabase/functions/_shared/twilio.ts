@@ -117,6 +117,39 @@ export async function validateTwilioSignature(opts: {
   }
 }
 
+export function buildTwilioSignatureUrls(req: Request, functionName: string): string[] {
+  const orig = new URL(req.url);
+  const envUrl = getEnv("SUPABASE_URL") || "";
+  const envHost = envUrl ? new URL(envUrl).host : "";
+  const forwardedProto = req.headers.get("x-forwarded-proto") || "https";
+  const forwardedHost = req.headers.get("x-forwarded-host") || "";
+  const host = req.headers.get("host") || orig.host;
+  const pathWithPrefix = orig.pathname.startsWith("/functions/v1/")
+    ? orig.pathname
+    : `/functions/v1${orig.pathname.startsWith("/") ? orig.pathname : `/${orig.pathname}`}`;
+  const canonicalPath = `/functions/v1/${functionName}`;
+  const hosts = [forwardedHost, host, envHost, orig.host].filter(Boolean);
+
+  const urls = [
+    req.url,
+    ...hosts.flatMap((h) => [
+      `${forwardedProto}://${h}${pathWithPrefix}${orig.search}`,
+      `https://${h}${pathWithPrefix}${orig.search}`,
+      `${forwardedProto}://${h}${orig.pathname}${orig.search}`,
+      `https://${h}${orig.pathname}${orig.search}`,
+      `${forwardedProto}://${h}${canonicalPath}${orig.search}`,
+      `https://${h}${canonicalPath}${orig.search}`,
+    ]),
+  ];
+
+  if (envUrl) {
+    const base = envUrl.replace(/\/$/, "");
+    urls.push(`${base}${canonicalPath}${orig.search}`);
+  }
+
+  return Array.from(new Set(urls));
+}
+
 export type SendResult = {
   ok: boolean;
   status: number;
