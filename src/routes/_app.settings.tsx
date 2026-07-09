@@ -427,12 +427,6 @@ function WebhookTab() {
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <Input readOnly value={url} className="font-mono text-xs" />
-          <Button variant="outline" onClick={() => { navigator.clipboard.writeText(url); toast.success("Disalin"); }}>
-            <Copy className="size-4" />
-          </Button>
-        </div>
         <div className="text-xs text-muted-foreground space-y-1">
           <p>✅ Pesan masuk otomatis bikin/lookup kontak + conversation.</p>
           <p>✅ Media (gambar/audio/dokumen) otomatis diunduh & disimpan.</p>
