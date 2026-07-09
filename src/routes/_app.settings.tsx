@@ -486,47 +486,6 @@ function FonnteTab() {
   );
 }
 
-function WebhookTab() {
-  const inboundUrl = `${SUPABASE_URL}/functions/v1/twilio-webhook`;
-  const statusUrl = `${SUPABASE_URL}/functions/v1/twilio-status`;
-  return (
-    <Card className="mt-4">
-      <CardHeader>
-        <CardTitle>Webhook URL untuk Twilio WhatsApp</CardTitle>
-        <CardDescription>
-          Di <strong>Twilio Console → Messaging → Senders / Sandbox</strong>, isi field <em>"When a message comes in"</em> dengan URL Inbound, dan <em>"Status callback URL"</em> dengan URL Status. Metode <strong>POST</strong>.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs">Inbound Webhook (When a message comes in)</Label>
-          <div className="flex gap-2">
-            <Input readOnly value={inboundUrl} className="font-mono text-xs" />
-            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(inboundUrl); toast.success("Disalin"); }}>
-              <Copy className="size-4" />
-            </Button>
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Status Callback URL</Label>
-          <div className="flex gap-2">
-            <Input readOnly value={statusUrl} className="font-mono text-xs" />
-            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(statusUrl); toast.success("Disalin"); }}>
-              <Copy className="size-4" />
-            </Button>
-          </div>
-        </div>
-
-        <div className="text-xs text-muted-foreground space-y-1">
-          <p>✅ Pesan masuk otomatis bikin/lookup kontak + conversation.</p>
-          <p>✅ Media (gambar/audio/dokumen) otomatis diunduh & disimpan.</p>
-          <p>✅ Chatbot workflow jalan untuk kontak baru.</p>
-          <p>✅ Status delivery (sent/delivered/failed) diupdate otomatis.</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function ProductsTab() {
   const [products, setProducts] = useState<any[]>([]);
