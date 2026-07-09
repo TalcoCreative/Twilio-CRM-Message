@@ -63,7 +63,7 @@ function SettingsPage() {
         {tab === "products" && <ProductsTab />}
         {tab === "team" && <TeamTab />}
         {tab === "shifts" && <FRWeeklySchedule />}
-        {tab === "webhook" && <WebhookTab />}
+        
       </div>
 
     </div>
