@@ -68,6 +68,13 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingAcceptRef = useRef<string>("*/*");
+  const pendingKindRef = useRef<MsgType>("DOCUMENT");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordChunksRef = useRef<Blob[]>([]);
+  const [recording, setRecording] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   async function loadConversations() {
     let q = supabase
