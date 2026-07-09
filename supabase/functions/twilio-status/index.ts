@@ -1,7 +1,7 @@
 // Twilio Programmable Messaging — dedicated delivery status callback.
 // Endpoint: POST /functions/v1/twilio-status
 import {
-  CORS_HEADERS, jsonResponse, loadTwilioConfig, makeAdmin, validateTwilioSignature,
+  CORS_HEADERS, jsonResponse, loadTwilioConfig, makeAdmin, getEnv, validateTwilioSignature,
 } from "../_shared/twilio.ts";
 
 const STATUS_MAP: Record<string, string> = {
