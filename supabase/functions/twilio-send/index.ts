@@ -6,10 +6,13 @@ import {
 } from "../_shared/twilio.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-function detectMediaType(url: string): "IMAGE" | "DOCUMENT" | "AUDIO" | "VIDEO" {
+type MsgType = "IMAGE" | "DOCUMENT" | "AUDIO" | "VIDEO" | "VOICE" | "STICKER";
+function detectMediaType(url: string): MsgType {
   const e = (url.split("?")[0].split(".").pop() || "").toLowerCase();
-  if (/^(jpg|jpeg|png|gif|webp|bmp)$/.test(e)) return "IMAGE";
-  if (/^(mp3|ogg|wav|m4a|opus|aac)$/.test(e)) return "AUDIO";
+  if (e === "webp") return "STICKER";
+  if (/^(jpg|jpeg|png|gif|bmp)$/.test(e)) return "IMAGE";
+  if (/^(ogg|opus)$/.test(e)) return "VOICE";
+  if (/^(mp3|wav|m4a|aac)$/.test(e)) return "AUDIO";
   if (/^(mp4|mov|3gp|webm)$/.test(e)) return "VIDEO";
   return "DOCUMENT";
 }
@@ -39,10 +42,10 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const {
       conversation_id, content, target, is_test,
-      media_path, media_filename,
+      media_path, media_filename, message_type,
     } = body as {
       conversation_id?: string; content?: string; target?: string; is_test?: boolean;
-      media_path?: string; media_filename?: string;
+      media_path?: string; media_filename?: string; message_type?: MsgType;
     };
     if (!content && !media_path) {
       return jsonResponse({ success: false, error: "content or attachment required" }, 400);
@@ -100,7 +103,7 @@ Deno.serve(async (req) => {
       ? Math.max(0, Math.floor((Date.now() - new Date(lastIn.sent_at).getTime()) / 1000))
       : null;
 
-    const msgType = mediaUrl ? detectMediaType(media_path || "") : "TEXT";
+    const msgType = message_type || (mediaUrl ? detectMediaType(media_path || "") : "TEXT");
     const { data: msg, error: insErr } = await admin.from("messages").insert({
       conversation_id: convId, direction: "OUTBOUND", type: msgType,
       content: content || (media_filename || "(attachment)"),

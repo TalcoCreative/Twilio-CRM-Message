@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Send, Search, Loader2, User as UserIcon, Tag, Zap, FileText, MoreVertical, StickyNote, MessageSquare, Trash2, Package, Smartphone, MailOpen } from "lucide-react";
+import { Send, Search, Loader2, User as UserIcon, Tag, Zap, FileText, MoreVertical, StickyNote, MessageSquare, Trash2, Package, Smartphone, MailOpen, Paperclip, Image as ImageIcon, Film, Mic, StopCircle, Sticker, File as FileIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -33,11 +33,12 @@ export type Conversation = {
   last_message_at: string | null; last_message_preview: string | null;
   unread_count: number; contact?: Contact;
 };
+type MsgType = "TEXT" | "IMAGE" | "DOCUMENT" | "AUDIO" | "VIDEO" | "VOICE" | "STICKER" | "INTERNAL_NOTE";
 type Message = {
   id: string; conversation_id: string;
   direction: "INBOUND" | "OUTBOUND"; content: string;
   sent_at: string; sent_by_id: string | null; status: string;
-  type: "TEXT" | "IMAGE" | "DOCUMENT" | "AUDIO" | "INTERNAL_NOTE";
+  type: MsgType;
   media_url: string | null;
 };
 type QuickReply = { id: string; name: string; content: string; sort_order: number };
@@ -67,6 +68,13 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingAcceptRef = useRef<string>("*/*");
+  const pendingKindRef = useRef<MsgType>("DOCUMENT");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordChunksRef = useRef<Blob[]>([]);
+  const [recording, setRecording] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   async function loadConversations() {
     let q = supabase
@@ -278,6 +286,88 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       } as any);
     }
   }
+
+  async function uploadAndSend(file: Blob, filename: string, kind: MsgType) {
+    if (!activeId) return;
+    setUploading(true);
+    try {
+      const ext = (filename.split(".").pop() || "bin").toLowerCase();
+      const path = `outbound/${activeId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("chat-media").upload(path, file, {
+        contentType: (file as File).type || "application/octet-stream",
+        upsert: false,
+      });
+      if (upErr) throw upErr;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/twilio-send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          conversation_id: activeId,
+          content: text.trim() || null,
+          media_path: path,
+          media_filename: filename,
+          message_type: kind,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Gagal kirim attachment");
+      setText("");
+      toast.success("Attachment terkirim");
+    } catch (e: any) {
+      toast.error(e?.message || String(e));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function pickFile(kind: MsgType, accept: string) {
+    pendingKindRef.current = kind;
+    pendingAcceptRef.current = accept;
+    if (fileInputRef.current) {
+      fileInputRef.current.accept = accept;
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  }
+
+  async function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    await uploadAndSend(f, f.name, pendingKindRef.current);
+  }
+
+  async function startVoiceNote() {
+    if (recording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+      const mr = new MediaRecorder(stream, { mimeType: mime });
+      recordChunksRef.current = [];
+      mr.ondataavailable = (ev) => { if (ev.data.size) recordChunksRef.current.push(ev.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(recordChunksRef.current, { type: mime });
+        const ext = mime.includes("webm") ? "webm" : "ogg";
+        await uploadAndSend(blob, `voice-${Date.now()}.${ext}`, "VOICE");
+      };
+      mediaRecorderRef.current = mr;
+      mr.start();
+      setRecording(true);
+    } catch (e: any) {
+      toast.error("Mikrofon tidak tersedia: " + (e?.message || e));
+    }
+  }
+
+  function stopVoiceNote() {
+    const mr = mediaRecorderRef.current;
+    if (!mr) return;
+    if (mr.state !== "inactive") mr.stop();
+    setRecording(false);
+  }
+
+
 
   async function markUnread(convId: string) {
     const current = conversations.find((c) => c.id === convId);
@@ -817,11 +907,20 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   const senderLabel = out
                     ? (effectiveAgentId ? agentName(effectiveAgentId) : "Sistem")
                     : (active.contact?.full_name || "Pelanggan");
+                  const isSticker = m.type === "STICKER";
                   return (
                     <div key={m.id} className={cn("flex flex-col gap-0.5", out ? "items-end" : "items-start")}>
                       <span className="text-[10px] px-1 text-muted-foreground">
                         {senderLabel}
                       </span>
+                      {isSticker && m.media_url ? (
+                        <div className="max-w-[40%]">
+                          <img src={m.media_url} alt="sticker" className="max-h-40 object-contain" />
+                          <div className="text-[10px] opacity-60 mt-0.5 text-right">
+                            {new Date(m.sent_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                        </div>
+                      ) : (
                       <div className={cn("max-w-[75%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words shadow-sm",
                         out ? "bg-chat-out text-chat-out-foreground rounded-br-sm"
                             : "bg-chat-in text-chat-in-foreground border rounded-bl-sm")}>
@@ -830,8 +929,14 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                             <img src={m.media_url} alt="attachment" className="max-h-64 rounded-lg object-cover" />
                           </a>
                         )}
-                        {m.media_url && m.type === "AUDIO" && (
-                          <audio src={m.media_url} controls className="max-w-full mb-1" />
+                        {m.media_url && m.type === "VIDEO" && (
+                          <video src={m.media_url} controls className="max-h-64 rounded-lg mb-1 max-w-full" />
+                        )}
+                        {m.media_url && (m.type === "AUDIO" || m.type === "VOICE") && (
+                          <div className="flex items-center gap-2 mb-1">
+                            {m.type === "VOICE" && <Mic className="size-3.5 shrink-0 opacity-70" />}
+                            <audio src={m.media_url} controls className="max-w-full" />
+                          </div>
                         )}
                         {m.media_url && m.type === "DOCUMENT" && (
                           <a href={m.media_url} target="_blank" rel="noreferrer"
@@ -848,6 +953,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                           {new Date(m.sent_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                         </div>
                       </div>
+                      )}
                     </div>
                   );
                 })}
@@ -901,19 +1007,62 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                       </div>
                     </>
                   )}
+                  {mode === "reply" && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={uploading || recording}>
+                          <Paperclip className="size-3" /> Lampiran
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-1" align="start">
+                        <button type="button" onClick={() => pickFile("IMAGE", "image/*")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <ImageIcon className="size-4" /> Foto
+                        </button>
+                        <button type="button" onClick={() => pickFile("VIDEO", "video/*")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <Film className="size-4" /> Video
+                        </button>
+                        <button type="button" onClick={() => pickFile("AUDIO", "audio/*")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <FileIcon className="size-4" /> Audio
+                        </button>
+                        <button type="button" onClick={() => pickFile("DOCUMENT", ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,application/pdf")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <FileText className="size-4" /> PDF / Dokumen
+                        </button>
+                        <button type="button" onClick={() => pickFile("STICKER", "image/webp,image/png")}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                          <Sticker className="size-4" /> Stiker
+                        </button>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                  <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePicked} />
                 </div>
                 <div className="flex gap-2">
                   <Input value={text} onChange={(e) => setText(e.target.value)}
                     placeholder={mode === "note"
                       ? "Catatan internal — hanya dilihat agent..."
-                      : `Balas sebagai ${agentName(user?.id || null)}...`}
-                    disabled={sending}
+                      : recording ? "Merekam voice note..." : `Balas sebagai ${agentName(user?.id || null)}...`}
+                    disabled={sending || uploading || recording}
                     className={mode === "note" ? "bg-amber-50 dark:bg-amber-500/10 border-amber-300" : ""}
                     autoFocus />
-                  <Button type="submit" disabled={sending || !text.trim()}
+                  {mode === "reply" && (
+                    recording ? (
+                      <Button type="button" onClick={stopVoiceNote} className="bg-rose-500 hover:bg-rose-600 text-white">
+                        <StopCircle className="size-4" />
+                      </Button>
+                    ) : (
+                      <Button type="button" variant="outline" onClick={startVoiceNote} disabled={uploading || sending} title="Rekam voice note">
+                        <Mic className="size-4" />
+                      </Button>
+                    )
+                  )}
+                  <Button type="submit" disabled={sending || uploading || recording || !text.trim()}
                     className={mode === "note" ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}>
 
-                    {sending ? <Loader2 className="size-4 animate-spin" /> :
+                    {sending || uploading ? <Loader2 className="size-4 animate-spin" /> :
                       mode === "note" ? <StickyNote className="size-4" /> : <Send className="size-4" />}
                   </Button>
                 </div>

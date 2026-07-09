@@ -8,14 +8,19 @@ import {
   normalizePhone, twilioSendMessage, validateTwilioSignature, TWILIO_ERROR_CODES,
 } from "../_shared/twilio.ts";
 
-function detectMediaType(mime: string, url: string): "IMAGE" | "DOCUMENT" | "AUDIO" | "VIDEO" {
+function detectMediaType(mime: string, url: string): "IMAGE" | "DOCUMENT" | "AUDIO" | "VIDEO" | "VOICE" | "STICKER" {
   const m = (mime || "").toLowerCase();
+  if (m === "image/webp") return "STICKER";
   if (m.startsWith("image/")) return "IMAGE";
+  // WhatsApp voice notes come as audio/ogg (opus)
+  if (m === "audio/ogg" || m.includes("opus")) return "VOICE";
   if (m.startsWith("audio/")) return "AUDIO";
   if (m.startsWith("video/")) return "VIDEO";
   const e = (url.split("?")[0].split(".").pop() || "").toLowerCase();
-  if (/^(jpg|jpeg|png|gif|webp|bmp)$/.test(e)) return "IMAGE";
-  if (/^(mp3|ogg|wav|m4a|opus|aac)$/.test(e)) return "AUDIO";
+  if (e === "webp") return "STICKER";
+  if (/^(jpg|jpeg|png|gif|bmp)$/.test(e)) return "IMAGE";
+  if (/^(ogg|opus)$/.test(e)) return "VOICE";
+  if (/^(mp3|wav|m4a|aac)$/.test(e)) return "AUDIO";
   if (/^(mp4|mov|3gp|webm)$/.test(e)) return "VIDEO";
   return "DOCUMENT";
 }
