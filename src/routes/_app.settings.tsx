@@ -210,8 +210,9 @@ function QuickRepliesTab() {
 }
 
 function FonnteTab() {
-  const [apiKey, setApiKey] = useState("");
-  const [device, setDevice] = useState("");
+  const [accountSid, setAccountSid] = useState("");
+  const [authToken, setAuthToken] = useState("");
+  const [whatsappFrom, setWhatsappFrom] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
@@ -221,44 +222,51 @@ function FonnteTab() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("system_settings").select("key,value").in("key", ["fonnte_api_key", "fonnte_device"]);
+      const { data } = await supabase.from("system_settings").select("key,value")
+        .in("key", ["twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from"]);
       data?.forEach((r) => {
-        if (r.key === "fonnte_api_key") setApiKey(r.value || "");
-        if (r.key === "fonnte_device") setDevice(r.value || "");
+        if (r.key === "twilio_account_sid") setAccountSid(r.value || "");
+        if (r.key === "twilio_auth_token") setAuthToken(r.value || "");
+        if (r.key === "twilio_whatsapp_from") setWhatsappFrom(r.value || "");
       });
     })();
   }, []);
 
+  const connected = !!(accountSid && authToken && whatsappFrom);
+
   async function save() {
+    if (!accountSid || !authToken || !whatsappFrom) {
+      toast.error("Isi Account SID, Auth Token, dan nomor WhatsApp Twilio");
+      return;
+    }
     setSaving(true);
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch(`${SUPABASE_URL}/functions/v1/save-fonnte-settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-      body: JSON.stringify({ api_key: apiKey, device }),
+      body: JSON.stringify({ account_sid: accountSid, auth_token: authToken, whatsapp_from: whatsappFrom }),
     });
     const j = await res.json();
     setSaving(false);
     if (!res.ok) { toast.error(j.error || "Gagal menyimpan"); return; }
-    if (j.device) { setDevice(j.device); toast.success(`Tersimpan · Device terhubung: ${j.device}`); }
-    else { toast.success("Tersimpan (device tidak terdeteksi, periksa token)"); }
+    if (j.validate_ok) toast.success(`Tersimpan · Twilio terverifikasi`);
+    else toast.success("Tersimpan (kredensial belum tervalidasi, cek SID/Token)");
   }
 
-
   async function testConnection() {
-    if (!apiKey) { toast.error("Masukkan API key dulu"); return; }
+    if (!accountSid || !authToken) { toast.error("Masukkan Account SID & Auth Token"); return; }
     setTesting(true);
     setTestResult(null);
     const res = await fetch(`${SUPABASE_URL}/functions/v1/fonnte-test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey }),
+      body: JSON.stringify({ account_sid: accountSid, auth_token: authToken }),
     });
     const j = await res.json();
     setTestResult(j);
     setTesting(false);
-    if (j.ok) toast.success("Gateway terkoneksi!");
-    else toast.error("Koneksi gagal. Cek API key.");
+    if (j.ok) toast.success("Twilio terkoneksi!");
+    else toast.error("Koneksi gagal. Cek SID/Token.");
   }
 
   async function testSend() {
@@ -273,46 +281,52 @@ function FonnteTab() {
     const j = await res.json();
     setSending(false);
     if (j.ok) toast.success("Pesan test terkirim! Cek WhatsApp.");
-    else toast.error(j.error || JSON.stringify(j.gateway || j.fonnte));
+    else toast.error(j.error || JSON.stringify(j.twilio || j));
   }
 
   return (
     <div className="space-y-4 mt-4">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><MessageCircle className="size-5" /> WhatsApp Gateway API Key</CardTitle>
+          <CardTitle className="flex items-center gap-2"><MessageCircle className="size-5" /> Twilio WhatsApp API</CardTitle>
           <CardDescription>
-            Hubungkan WhatsApp Gateway untuk mengirim dan menerima pesan otomatis. Token didapat dari dashboard penyedia gateway Anda.
+            Hubungkan Twilio WhatsApp untuk mengirim & menerima pesan. Dapatkan Account SID dan Auth Token dari <a href="https://console.twilio.com/" target="_blank" rel="noreferrer" className="underline">console.twilio.com</a>.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {device && (
+          {connected && (
             <div className="flex items-center gap-2 p-3 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-sm">
               <CheckCircle2 className="size-4 text-emerald-600" />
               <div>
-                <div className="font-medium text-emerald-700 dark:text-emerald-300">Device Aktif</div>
-                <div className="text-xs text-emerald-700/80 dark:text-emerald-300/80 font-mono">{device}</div>
+                <div className="font-medium text-emerald-700 dark:text-emerald-300">Twilio Terhubung</div>
+                <div className="text-xs text-emerald-700/80 dark:text-emerald-300/80 font-mono">{whatsappFrom}</div>
               </div>
             </div>
           )}
           <div className="space-y-1.5">
-            <Label>API Token</Label>
-            <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Token gateway WhatsApp" />
-            <p className="text-[11px] text-muted-foreground">Setelah Simpan, sistem otomatis mendeteksi nomor device dari token ini.</p>
+            <Label>Account SID</Label>
+            <Input value={accountSid} onChange={(e) => setAccountSid(e.target.value)} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
           </div>
           <div className="space-y-1.5">
-            <Label>Nomor Device (opsional, otomatis terdeteksi)</Label>
-            <Input value={device} onChange={(e) => setDevice(e.target.value)} placeholder="628xxx (otomatis)" />
+            <Label>Auth Token (Client Secret)</Label>
+            <Input type="password" value={authToken} onChange={(e) => setAuthToken(e.target.value)} placeholder="Twilio Auth Token" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Nomor WhatsApp Twilio (From)</Label>
+            <Input value={whatsappFrom} onChange={(e) => setWhatsappFrom(e.target.value)} placeholder="+14155238886" />
+            <p className="text-[11px] text-muted-foreground">
+              Format E.164 (contoh: <code>+14155238886</code>). Untuk sandbox pakai nomor sandbox Twilio; production pakai nomor WhatsApp Business yang sudah approved.
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <Button onClick={save} disabled={saving}>
               {saving && <Loader2 className="size-4 mr-2 animate-spin" />} Simpan
             </Button>
-            <Button variant="outline" onClick={testConnection} disabled={testing || !apiKey}>
+            <Button variant="outline" onClick={testConnection} disabled={testing || !accountSid || !authToken}>
               {testing && <Loader2 className="size-4 mr-2 animate-spin" />} Test Koneksi
             </Button>
-            {(apiKey || device) && (
+            {(accountSid || authToken || whatsappFrom) && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive">
@@ -321,9 +335,9 @@ function FonnteTab() {
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Putuskan koneksi WhatsApp Gateway?</AlertDialogTitle>
+                    <AlertDialogTitle>Putuskan koneksi Twilio?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      API key & nomor device akan dihapus dari sistem. Pesan WhatsApp tidak akan terkirim sampai Anda menghubungkan kembali. Anda yakin?
+                      SID, Auth Token, dan nomor WhatsApp akan dihapus. Pesan WhatsApp tidak akan terkirim sampai Anda menghubungkan kembali.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -333,11 +347,11 @@ function FonnteTab() {
                       const res = await fetch(`${SUPABASE_URL}/functions/v1/save-fonnte-settings`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-                        body: JSON.stringify({ api_key: "", device: "" }),
+                        body: JSON.stringify({ account_sid: "", auth_token: "", whatsapp_from: "" }),
                       });
                       if (res.ok) {
-                        setApiKey(""); setDevice(""); setTestResult(null);
-                        toast.success("Gateway diputuskan");
+                        setAccountSid(""); setAuthToken(""); setWhatsappFrom(""); setTestResult(null);
+                        toast.success("Twilio diputuskan");
                       } else {
                         toast.error("Gagal disconnect");
                       }
@@ -351,7 +365,7 @@ function FonnteTab() {
             <div className={`mt-2 p-3 rounded-md text-sm border ${testResult.ok ? "bg-success/10 border-success/30 text-success" : "bg-destructive/10 border-destructive/30 text-destructive"}`}>
               <div className="flex items-center gap-2 font-medium">
                 {testResult.ok ? <CheckCircle2 className="size-4" /> : <XCircle className="size-4" />}
-                {testResult.ok ? "Gateway terhubung" : "Gagal terhubung"}
+                {testResult.ok ? "Twilio terhubung" : "Gagal terhubung"}
               </div>
               <pre className="text-[11px] mt-2 overflow-x-auto opacity-80">{JSON.stringify(testResult.data || testResult, null, 2)}</pre>
             </div>
@@ -366,8 +380,8 @@ function FonnteTab() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Nomor Tujuan (628xxx)</Label>
-            <Input value={testNumber} onChange={(e) => setTestNumber(e.target.value)} placeholder="628123456789" />
+            <Label>Nomor Tujuan (E.164, contoh +6281234567890)</Label>
+            <Input value={testNumber} onChange={(e) => setTestNumber(e.target.value)} placeholder="+6281234567890" />
           </div>
           <div className="space-y-1.5">
             <Label>Pesan</Label>
@@ -387,8 +401,10 @@ function WebhookTab() {
   return (
     <Card className="mt-4">
       <CardHeader>
-        <CardTitle>Webhook URL untuk WhatsApp Gateway</CardTitle>
-        <CardDescription>Copy URL ini ke <strong>dashboard gateway Anda → Device → URL Webhook</strong>, lalu centang event <em>incoming</em>.</CardDescription>
+        <CardTitle>Webhook URL untuk Twilio WhatsApp</CardTitle>
+        <CardDescription>
+          Copy URL ini ke <strong>Twilio Console → Messaging → WhatsApp Sender / Sandbox → "When a message comes in"</strong>, method <em>POST</em>. Untuk status callback, pasang URL yang sama di kolom "Status callback URL".
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex gap-2">
@@ -398,9 +414,10 @@ function WebhookTab() {
           </Button>
         </div>
         <div className="text-xs text-muted-foreground space-y-1">
-          <p>✅ Pesan masuk akan otomatis bikin/lookup kontak + conversation.</p>
-          <p>✅ Chatbot onboarding (3 pertanyaan) akan jalan untuk kontak baru.</p>
-          <p>✅ UI Inbox menerima pesan secara realtime tanpa refresh.</p>
+          <p>✅ Pesan masuk otomatis bikin/lookup kontak + conversation.</p>
+          <p>✅ Media (gambar/audio/dokumen) otomatis diunduh & disimpan.</p>
+          <p>✅ Chatbot workflow jalan untuk kontak baru.</p>
+          <p>✅ Status delivery (sent/delivered/failed) diupdate otomatis.</p>
         </div>
       </CardContent>
     </Card>

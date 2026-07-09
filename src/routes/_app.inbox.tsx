@@ -85,7 +85,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       supabase.from("stages").select("id, name, color").order("order_index"),
       supabase.from("products").select("id, name").eq("is_active", true).order("sort_order"),
       supabase.from("templates").select("id, name, content, sort_order").eq("is_quick_reply", true).order("sort_order"),
-      supabase.from("system_settings").select("key,value").in("key", ["fonnte_device", "device_label"]),
+      supabase.from("system_settings").select("key,value").in("key", ["twilio_whatsapp_from", "device_label", "fonnte_device"]),
     ]);
     const pmap: Record<string, Profile> = {};
     (p.data || []).forEach((x: any) => { pmap[x.id] = x; });
@@ -95,8 +95,8 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     setProducts((pr.data as any) || []);
     setQuickReplies((qr.data as any) || []);
     const sMap = (ss.data || []).reduce((acc: any, x: any) => { acc[x.key] = x.value; return acc; }, {});
-    const label = sMap.device_label || sMap.fonnte_device;
-    setDeviceLabel(label ? `WA Device · ${label}` : "WA Device");
+    const label = sMap.device_label || sMap.twilio_whatsapp_from || sMap.fonnte_device;
+    setDeviceLabel(label ? `WA · ${label}` : "WA");
   }
 
   useEffect(() => { loadConversations(); loadMeta(); }, [mineOnly, user?.id]);
