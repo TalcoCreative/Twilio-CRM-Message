@@ -35,7 +35,6 @@ function SettingsPage() {
     { v: "products", label: "Produk" },
     { v: "team", label: "Tim Agent" },
     { v: "shifts", label: "Jadwal Mingguan FR" },
-    { v: "webhook", label: "Webhook" },
   ];
   return (
     <div className="p-3 md:p-6 max-w-6xl mx-auto space-y-5">
