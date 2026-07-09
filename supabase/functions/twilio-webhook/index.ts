@@ -114,7 +114,8 @@ Deno.serve(async (req) => {
       const agentPhones = new Set((agentMatch || []).map((a: any) => normalizePhone(String(a.phone))));
       if (agentPhones.has(contactNumber)) return jsonResponse({ success: true, skip: "agent-phone" });
 
-      const { data: defaultStage } = await admin.from("stages").select("id").eq("is_default", true).maybeSingle();
+      const { data: defaultStage } = await admin.from("stages").select("id")
+        .eq("is_default", true).order("order_index", { ascending: true }).limit(1).maybeSingle();
 
       // Ads content code detection
       let contentCodeId: string | null = null;
@@ -163,7 +164,7 @@ Deno.serve(async (req) => {
 
     let { data: conv } = await admin.from("conversations").select("*")
       .eq("contact_id", contact.id).eq("status", "OPEN")
-      .order("created_at", { ascending: false }).maybeSingle();
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!conv) {
       const { data: newConv, error: newConvError } = await admin.from("conversations").insert({
         contact_id: contact.id, status: "OPEN",
