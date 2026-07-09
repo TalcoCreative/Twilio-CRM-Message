@@ -79,6 +79,11 @@ Deno.serve(async (req) => {
 
     const messageSid = String(payload.MessageSid || payload.SmsSid || "");
     const messageStatus = String(payload.MessageStatus || payload.SmsStatus || "").toLowerCase();
+    const from = payload.From;
+    const rawMessage = String(payload.Body || "");
+    const message = rawMessage.trim();
+    const waName = (payload.ProfileName || "").toString().trim() || null;
+    const numMedia = Number(payload.NumMedia || 0);
 
     // Status callback fallback (if shared URL). Twilio status callbacks can
     // include From/To, so classify by absence of real inbound content instead
@@ -90,12 +95,6 @@ Deno.serve(async (req) => {
       }
       return jsonResponse({ success: true, kind: "status-callback", messageStatus });
     }
-
-    const from = payload.From;
-    const rawMessage = String(payload.Body || "");
-    const message = rawMessage.trim();
-    const waName = (payload.ProfileName || "").toString().trim() || null;
-    const numMedia = Number(payload.NumMedia || 0);
 
     if (!from) return jsonResponse({ success: false, error: "no From" }, 400);
 
