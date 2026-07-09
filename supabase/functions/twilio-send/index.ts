@@ -6,10 +6,13 @@ import {
 } from "../_shared/twilio.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-function detectMediaType(url: string): "IMAGE" | "DOCUMENT" | "AUDIO" | "VIDEO" {
+type MsgType = "IMAGE" | "DOCUMENT" | "AUDIO" | "VIDEO" | "VOICE" | "STICKER";
+function detectMediaType(url: string): MsgType {
   const e = (url.split("?")[0].split(".").pop() || "").toLowerCase();
-  if (/^(jpg|jpeg|png|gif|webp|bmp)$/.test(e)) return "IMAGE";
-  if (/^(mp3|ogg|wav|m4a|opus|aac)$/.test(e)) return "AUDIO";
+  if (e === "webp") return "STICKER";
+  if (/^(jpg|jpeg|png|gif|bmp)$/.test(e)) return "IMAGE";
+  if (/^(ogg|opus)$/.test(e)) return "VOICE";
+  if (/^(mp3|wav|m4a|aac)$/.test(e)) return "AUDIO";
   if (/^(mp4|mov|3gp|webm)$/.test(e)) return "VIDEO";
   return "DOCUMENT";
 }
