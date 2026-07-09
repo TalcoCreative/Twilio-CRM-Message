@@ -4,7 +4,7 @@
 // Status callbacks live in /functions/v1/twilio-status but this endpoint
 // tolerates status posts too (for setups that share a single URL).
 import {
-  CORS_HEADERS, jsonResponse, loadTwilioConfig, makeAdmin,
+  CORS_HEADERS, jsonResponse, loadTwilioConfig, makeAdmin, getEnv,
   normalizePhone, twilioSendMessage, validateTwilioSignature, TWILIO_ERROR_CODES,
 } from "../_shared/twilio.ts";
 
@@ -50,13 +50,31 @@ Deno.serve(async (req) => {
     // Signature validation (only when we have credentials).
     const cfg = await loadTwilioConfig(admin);
     const signature = req.headers.get("x-twilio-signature") || "";
-    if (cfg.authToken && signature) {
-      const url = req.url;
-      const valid = await validateTwilioSignature({
-        authToken: cfg.authToken, url, params: payload, signature,
-      });
+    const skipVerify = (getEnv("TWILIO_SKIP_SIGNATURE") || "").toLowerCase() === "true";
+    if (cfg.authToken && signature && !skipVerify) {
+      // Twilio signs the exact public URL configured in the console. Behind
+      // Supabase's proxy req.url can be http://<ref>.supabase.co/twilio-webhook
+      // (missing scheme + /functions/v1 prefix), so try several candidates.
+      const orig = new URL(req.url);
+      const proto = req.headers.get("x-forwarded-proto") || "https";
+      const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || orig.host;
+      const path = orig.pathname.startsWith("/functions/v1/")
+        ? orig.pathname
+        : `/functions/v1${orig.pathname}`;
+      const candidates = Array.from(new Set([
+        `${proto}://${host}${path}${orig.search}`,
+        `https://${host}${path}${orig.search}`,
+        `${proto}://${host}${orig.pathname}${orig.search}`,
+        req.url,
+      ]));
+      let valid = false;
+      for (const url of candidates) {
+        if (await validateTwilioSignature({ authToken: cfg.authToken, url, params: payload, signature })) {
+          valid = true; break;
+        }
+      }
       if (!valid) {
-        console.warn("[twilio-webhook] invalid signature", { url });
+        console.warn("[twilio-webhook] invalid signature", { tried: candidates });
         return jsonResponse({ success: false, error: "Invalid Twilio signature" }, 403);
       }
     }
