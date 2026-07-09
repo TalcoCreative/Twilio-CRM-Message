@@ -287,6 +287,88 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     }
   }
 
+  async function uploadAndSend(file: Blob, filename: string, kind: MsgType) {
+    if (!activeId) return;
+    setUploading(true);
+    try {
+      const ext = (filename.split(".").pop() || "bin").toLowerCase();
+      const path = `outbound/${activeId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("chat-media").upload(path, file, {
+        contentType: (file as File).type || "application/octet-stream",
+        upsert: false,
+      });
+      if (upErr) throw upErr;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/twilio-send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          conversation_id: activeId,
+          content: text.trim() || null,
+          media_path: path,
+          media_filename: filename,
+          message_type: kind,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Gagal kirim attachment");
+      setText("");
+      toast.success("Attachment terkirim");
+    } catch (e: any) {
+      toast.error(e?.message || String(e));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function pickFile(kind: MsgType, accept: string) {
+    pendingKindRef.current = kind;
+    pendingAcceptRef.current = accept;
+    if (fileInputRef.current) {
+      fileInputRef.current.accept = accept;
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  }
+
+  async function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    await uploadAndSend(f, f.name, pendingKindRef.current);
+  }
+
+  async function startVoiceNote() {
+    if (recording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+      const mr = new MediaRecorder(stream, { mimeType: mime });
+      recordChunksRef.current = [];
+      mr.ondataavailable = (ev) => { if (ev.data.size) recordChunksRef.current.push(ev.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(recordChunksRef.current, { type: mime });
+        const ext = mime.includes("webm") ? "webm" : "ogg";
+        await uploadAndSend(blob, `voice-${Date.now()}.${ext}`, "VOICE");
+      };
+      mediaRecorderRef.current = mr;
+      mr.start();
+      setRecording(true);
+    } catch (e: any) {
+      toast.error("Mikrofon tidak tersedia: " + (e?.message || e));
+    }
+  }
+
+  function stopVoiceNote() {
+    const mr = mediaRecorderRef.current;
+    if (!mr) return;
+    if (mr.state !== "inactive") mr.stop();
+    setRecording(false);
+  }
+
+
+
   async function markUnread(convId: string) {
     const current = conversations.find((c) => c.id === convId);
     const next = (current?.unread_count || 0) > 0 ? 0 : 1;
