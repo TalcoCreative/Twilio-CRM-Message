@@ -29,6 +29,7 @@ function SettingsPage() {
   const [tab, setTab] = useState("gateway");
   const tabs = [
     { v: "gateway", label: "WhatsApp Gateway" },
+    { v: "stages", label: "Stages Pipeline" },
     { v: "flow", label: "Bot Workflow" },
     { v: "categories", label: "Kategori Pertanyaan" },
     { v: "quick", label: "Quick Replies" },
@@ -57,12 +58,14 @@ function SettingsPage() {
 
       <div>
         {tab === "gateway" && <FonnteTab />}
+        {tab === "stages" && <WorkflowTab />}
         {tab === "flow" && <WorkflowBuilderTab />}
         {tab === "categories" && <CategoriesTab />}
         {tab === "quick" && <QuickRepliesTab />}
         {tab === "products" && <ProductsTab />}
         {tab === "team" && <TeamTab />}
         {tab === "shifts" && <FRWeeklySchedule />}
+
         
       </div>
 

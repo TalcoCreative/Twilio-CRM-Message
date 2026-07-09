@@ -126,14 +126,47 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     return () => clearInterval(t);
   }, [user?.id]);
 
+  const activeIdRef = useRef<string | null>(null);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
   useEffect(() => {
     const ch = supabase.channel("inbox-all-" + (mineOnly ? "mine" : "team"))
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadConversations())
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "contacts" }, () => loadConversations())
       .on("postgres_changes", { event: "*", schema: "public", table: "templates" }, () => loadMeta())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const m = payload.new as Message;
+        // Patch conversation list instantly (before conversations UPDATE arrives)
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === m.conversation_id);
+          if (idx < 0) { loadConversations(); return prev; }
+          const preview = m.type === "TEXT" || m.type === "INTERNAL_NOTE" ? (m.content || "") : `[${m.type.toLowerCase()}]`;
+          const isActive = activeIdRef.current === m.conversation_id;
+          const updated = {
+            ...prev[idx],
+            last_message_at: m.sent_at,
+            last_message_preview: preview,
+            unread_count: m.direction === "INBOUND" && !isActive ? (prev[idx].unread_count || 0) + 1 : prev[idx].unread_count,
+          };
+          const copy = prev.slice();
+          copy.splice(idx, 1);
+          return [updated, ...copy];
+        });
+        // Append to active message stream
+        if (activeIdRef.current === m.conversation_id) {
+          setMessages((prev) => {
+            if (prev.find((x) => x.id === m.id)) return prev;
+            const tempIdx = prev.findIndex((x) => x.id.startsWith("tmp-") && x.content === m.content && x.direction === m.direction);
+            if (tempIdx >= 0) { const c = prev.slice(); c[tempIdx] = m; return c; }
+            return [...prev, m];
+          });
+          supabase.from("conversations").update({ unread_count: 0 }).eq("id", m.conversation_id).then(() => {});
+        }
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [mineOnly, user?.id]);
+
 
   useEffect(() => {
     if (!activeId) { setMessages([]); return; }
