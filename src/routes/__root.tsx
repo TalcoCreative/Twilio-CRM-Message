@@ -101,9 +101,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "manifest", href: "/manifest.webmanifest" },
-      { rel: "icon", type: "image/png", href: husadaLogo.url },
       { rel: "apple-touch-icon", href: husadaLogo.url },
-      { rel: "shortcut icon", href: husadaLogo.url },
     ],
   }),
   shellComponent: RootShell,
