@@ -1,4 +1,4 @@
-// Notify agent via WhatsApp when assigned to a conversation, or send a test message.
+// Notify agent via WhatsApp (Twilio) when assigned, or send a test message.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -14,9 +14,7 @@ Deno.serve(async (req) => {
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const PUBLISHABLE = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
 
-  function json(d: any, s = 200) {
-    return new Response(JSON.stringify(d), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-  }
+  const json = (d: any, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   try {
     const authHeader = req.headers.get("Authorization") || "";
@@ -36,20 +34,19 @@ Deno.serve(async (req) => {
     if (!test && !conversation_id) return json({ error: "conversation_id required" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
-
-    // Don't notify self-assign unless explicit test
     if (!test && agent_id === assigner.id) return json({ ok: true, skipped: "self-assign" });
 
     const [{ data: agent }, { data: assignerProf }, { data: settings }] = await Promise.all([
       admin.from("profiles").select("id, full_name, email, phone").eq("id", agent_id).maybeSingle(),
       admin.from("profiles").select("full_name, email").eq("id", assigner.id).maybeSingle(),
-      admin.from("system_settings").select("key,value").in("key", ["fonnte_api_key", "fonnte_device"]),
+      admin.from("system_settings").select("key,value").in("key", ["twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from"]),
     ]);
 
     if (!agent?.phone) return json({ ok: false, skipped: "agent has no phone" });
-    const api_key = settings?.find((s: any) => s.key === "fonnte_api_key")?.value;
-    const deviceNum = settings?.find((s: any) => s.key === "fonnte_device")?.value;
-    if (!api_key) return json({ ok: false, skipped: "no api key" });
+    const sid = settings?.find((s: any) => s.key === "twilio_account_sid")?.value;
+    const tok = settings?.find((s: any) => s.key === "twilio_auth_token")?.value;
+    const fromNum = settings?.find((s: any) => s.key === "twilio_whatsapp_from")?.value;
+    if (!sid || !tok || !fromNum) return json({ ok: false, skipped: "twilio not configured" });
 
     let message: string;
     if (test) {
@@ -86,21 +83,23 @@ Deno.serve(async (req) => {
     let phone = String(agent.phone).replace(/\D/g, "");
     if (phone.startsWith("0")) phone = "62" + phone.slice(1);
     if (!phone.startsWith("62")) phone = "62" + phone;
+    const toWa = `whatsapp:+${phone}`;
+    const fromWa = fromNum.startsWith("whatsapp:") ? fromNum
+      : `whatsapp:${fromNum.startsWith("+") ? fromNum : "+" + fromNum.replace(/[^\d]/g, "")}`;
 
-    const fd = new FormData();
-    fd.append("target", phone);
-    fd.append("message", message);
-    if (deviceNum) fd.append("device", String(deviceNum).replace(/\D/g, ""));
-    fd.append("countryCode", "62");
+    const fd = new URLSearchParams();
+    fd.append("From", fromWa);
+    fd.append("To", toWa);
+    fd.append("Body", message);
 
-    const fres = await fetch("https://api.fonnte.com/send", {
+    const basic = btoa(`${sid}:${tok}`);
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Messages.json`, {
       method: "POST",
-      headers: { Authorization: api_key },
+      headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" },
       body: fd,
     });
-    const fdata = await fres.json().catch(() => ({}));
-    const okFlag = fres.ok && (fdata?.status === true || fdata?.status === "true" || fdata?.detail?.toString().toLowerCase().includes("success") || fres.status === 200);
-    return json({ ok: okFlag, gateway: fdata });
+    const data = await res.json().catch(() => ({}));
+    return json({ ok: res.ok && !data?.code, gateway: data });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }

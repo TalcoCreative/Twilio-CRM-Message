@@ -1,4 +1,5 @@
-// Send WhatsApp message via Fonnte and store as OUTBOUND message (text or attachment)
+// Send WhatsApp via Twilio and store as OUTBOUND message (text or attachment).
+// Kept at path "fonnte-send" for frontend backward-compat.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -14,12 +15,27 @@ function detectMediaType(url: string): "IMAGE" | "DOCUMENT" | "AUDIO" {
   return "DOCUMENT";
 }
 
+function toWa(num: string): string {
+  const raw = String(num || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("whatsapp:")) return raw;
+  let n = raw.replace(/[^\d+]/g, "");
+  if (n.startsWith("+")) return `whatsapp:${n}`;
+  if (n.startsWith("0")) n = "62" + n.slice(1);
+  if (!n.startsWith("62") && !/^\d{10,15}$/.test(n)) n = "62" + n;
+  return `whatsapp:+${n}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const PUBLISHABLE = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
+
+  const json = (d: any, s = 200) => new Response(JSON.stringify(d), {
+    status: s, headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 
   try {
     const authHeader = req.headers.get("Authorization") || "";
@@ -34,7 +50,6 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Unauthorized" }, 401);
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
-
     const body = await req.json();
     const {
       conversation_id, content, target, is_test,
@@ -48,11 +63,13 @@ Deno.serve(async (req) => {
 
     const { data: settings } = await admin
       .from("system_settings").select("key,value")
-      .in("key", ["fonnte_api_key", "fonnte_device"]);
-    const api_key = settings?.find((s) => s.key === "fonnte_api_key")?.value;
-    const deviceNum = settings?.find((s) => s.key === "fonnte_device")?.value;
-    if (!api_key) return json({ error: "API key belum dikonfigurasi. Atur di Settings → WhatsApp Gateway." }, 400);
-
+      .in("key", ["twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from"]);
+    const sid = settings?.find((s) => s.key === "twilio_account_sid")?.value;
+    const authTok = settings?.find((s) => s.key === "twilio_auth_token")?.value;
+    const fromNum = settings?.find((s) => s.key === "twilio_whatsapp_from")?.value;
+    if (!sid || !authTok || !fromNum) {
+      return json({ error: "Twilio belum dikonfigurasi. Atur di Settings → WhatsApp Gateway." }, 400);
+    }
 
     let toNumber = target;
     let convId = conversation_id;
@@ -69,46 +86,44 @@ Deno.serve(async (req) => {
     }
     if (!toNumber) return json({ error: "target number required" }, 400);
 
-    // If attachment, download the file from storage and upload as binary multipart to Fonnte
+    // Public signed URL for media (Twilio needs a publicly reachable URL).
     let mediaUrl: string | null = null;
-    let fileBlob: Blob | null = null;
     if (media_path) {
       const { data: signed, error: signErr } = await admin.storage
         .from("chat-media").createSignedUrl(media_path, 60 * 60 * 24 * 7);
       if (signErr || !signed) return json({ error: "Gagal membuat URL attachment: " + (signErr?.message || "") }, 500);
       mediaUrl = signed.signedUrl;
-      const { data: blob, error: dlErr } = await admin.storage.from("chat-media").download(media_path);
-      if (dlErr || !blob) return json({ error: "Gagal membaca file: " + (dlErr?.message || "") }, 500);
-      fileBlob = blob;
     }
 
-    const fd = new FormData();
-    fd.append("target", toNumber);
-    const wireMessage = content && content.trim().length > 0
+    const wireBody = content && content.trim().length > 0
       ? content
-      : (fileBlob ? (media_filename || " ") : "");
-    fd.append("message", wireMessage);
-    if (deviceNum) fd.append("device", String(deviceNum).replace(/\D/g, ""));
-    fd.append("countryCode", "62");
+      : (mediaUrl ? (media_filename || "") : "");
 
-    if (fileBlob) {
-      fd.append("file", fileBlob, media_filename || "attachment");
-    }
+    const fd = new URLSearchParams();
+    fd.append("From", toWa(fromNum));
+    fd.append("To", toWa(toNumber));
+    if (wireBody) fd.append("Body", wireBody);
+    if (mediaUrl) fd.append("MediaUrl", mediaUrl);
 
-    const fres = await fetch("https://api.fonnte.com/send", {
+    const basic = btoa(`${sid}:${authTok}`);
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Messages.json`;
+    const fres = await fetch(url, {
       method: "POST",
-      headers: { Authorization: api_key },
+      headers: {
+        Authorization: `Basic ${basic}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
       body: fd,
     });
     const fdata = await fres.json().catch(() => ({}));
 
-    if (!fres.ok || fdata.status === false) {
-      return json({ ok: false, fonnte: fdata, status: fres.status }, 502);
+    if (!fres.ok || fdata?.code) {
+      return json({ ok: false, error: fdata?.message || `Twilio ${fres.status}`, twilio: fdata, status: fres.status }, 502);
     }
 
-    if (is_test) return json({ ok: true, fonnte: fdata });
+    if (is_test) return json({ ok: true, twilio: fdata });
 
-    const fonnteId = Array.isArray(fdata.id) ? String(fdata.id[0]) : (fdata.id ? String(fdata.id) : null);
+    const messageSid = fdata?.sid ? String(fdata.sid) : null;
 
     const { data: lastIn } = await admin
       .from("messages").select("sent_at")
@@ -123,7 +138,7 @@ Deno.serve(async (req) => {
       .from("messages").insert({
         conversation_id: convId, direction: "OUTBOUND", type: msgType,
         content: content || (media_filename || "(attachment)"),
-        sent_by_id: user.id, fonnte_message_id: fonnteId,
+        sent_by_id: user.id, fonnte_message_id: messageSid,
         status: "SENT", response_seconds: respSec,
         media_url: mediaUrl,
       }).select().single();
@@ -138,15 +153,8 @@ Deno.serve(async (req) => {
     if (!conv2?.first_response_at) convPatch.first_response_at = new Date().toISOString();
     await admin.from("conversations").update(convPatch).eq("id", convId);
 
-    return json({ ok: true, message: msg, fonnte: fdata });
+    return json({ ok: true, message: msg, twilio: fdata });
   } catch (e) {
     return json({ error: String(e) }, 500);
-  }
-
-  function json(d: any, s = 200) {
-    return new Response(JSON.stringify(d), {
-      status: s,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
   }
 });

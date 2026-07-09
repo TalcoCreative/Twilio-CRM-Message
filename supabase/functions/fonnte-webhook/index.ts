@@ -1,4 +1,6 @@
-// Public webhook receiver for Fonnte incoming messages — runs Dynamic Workflow + mirrors device-sent outbound
+// Public webhook receiver for Twilio incoming WhatsApp messages.
+// Kept at path "fonnte-webhook" for backward compatibility of external webhook URL.
+// Also handles Twilio status callbacks (MessageStatus updates).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -8,14 +10,19 @@ const corsHeaders = {
 };
 
 function normalizePhone(p: string): string {
-  let n = String(p || "").replace(/[^\d]/g, "");
+  let n = String(p || "").replace(/^whatsapp:/i, "").replace(/[^\d]/g, "");
   if (n.startsWith("0")) n = "62" + n.slice(1);
-  if (!n.startsWith("62")) n = "62" + n;
+  if (!n) return "";
+  if (!/^\d{7,}$/.test(n)) return "";
+  if (!n.startsWith("62") && n.length <= 12) n = "62" + n;
   return n;
 }
 
-function detectMediaType(url: string, ext?: string): "IMAGE" | "DOCUMENT" | "AUDIO" {
-  const e = (ext || url.split(".").pop() || "").toLowerCase();
+function detectMediaType(mime: string, url: string): "IMAGE" | "DOCUMENT" | "AUDIO" {
+  const m = (mime || "").toLowerCase();
+  if (m.startsWith("image/")) return "IMAGE";
+  if (m.startsWith("audio/")) return "AUDIO";
+  const e = (url.split("?")[0].split(".").pop() || "").toLowerCase();
   if (/^(jpg|jpeg|png|gif|webp|bmp)$/.test(e)) return "IMAGE";
   if (/^(mp3|ogg|wav|m4a|opus|aac)$/.test(e)) return "AUDIO";
   return "DOCUMENT";
@@ -23,7 +30,7 @@ function detectMediaType(url: string, ext?: string): "IMAGE" | "DOCUMENT" | "AUD
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method === "GET") return new Response("Webhook ready", { headers: corsHeaders });
+  if (req.method === "GET") return new Response("Twilio webhook ready", { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -31,10 +38,6 @@ Deno.serve(async (req) => {
 
   const json = (d: any, s = 200) =>
     new Response(JSON.stringify(d), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
-  // Hardcoded blocklist — devices/tokens that must never reach this inbox
-  const BLOCKED_DEVICES = ["6281808881924"];
-  const BLOCKED_TOKENS = ["VLp1fpK78vrr6x2bDsZo"];
 
   try {
     let payload: Record<string, any> = {};
@@ -45,61 +48,43 @@ Deno.serve(async (req) => {
       for (const [k, v] of fd.entries()) payload[k] = typeof v === "string" ? v : "";
     }
 
-    // Token guard — reject any webhook carrying a blocked token in body or headers
-    const tokenField = String(payload.token || payload.api_key || payload.apikey || req.headers.get("authorization") || "").trim();
-    if (tokenField && BLOCKED_TOKENS.some((t) => tokenField.includes(t))) {
-      return json({ ok: true, skip: "blocked-token" });
-    }
-
-    const sender = payload.sender || payload.from || payload.number;
-    const rawMessage = String(payload.message || payload.text || payload.body || "");
-    const WATERMARK_RE = /\s*>?\s*_?Sent via fonnte\.com_?\s*$/i;
-    const hasWatermark = /Sent via fonnte\.com/i.test(rawMessage);
-    const message = rawMessage.replace(WATERMARK_RE, "").trim();
-    const waName = (payload.name || payload.pushname || payload.sender_name || "").toString().trim() || null;
-    const fonnteMsgId = payload.id || payload.message_id || null;
-    const deviceField = payload.device || payload.device_number || null;
-    const mediaUrl = (payload.url || payload.file || payload.media || "").toString().trim() || null;
-    const mediaExt = (payload.extension || payload.filename || "").toString();
-    const fromMe = payload.fromMe === true || payload.fromMe === "true" || payload.from_me === true || payload.fromme === true;
-
-    // Device blocklist — reject if the originating device is blocked
-    if (deviceField) {
-      const devN = normalizePhone(String(deviceField));
-      if (BLOCKED_DEVICES.some((d) => normalizePhone(d) === devN)) {
-        return json({ ok: true, skip: "blocked-device" });
+    // Status callback (delivery receipts) — update message status if we tracked SID
+    const messageStatus = String(payload.MessageStatus || payload.SmsStatus || "").toLowerCase();
+    const messageSid = String(payload.MessageSid || payload.SmsSid || "");
+    if (messageStatus && !payload.Body && !payload.NumMedia) {
+      if (messageSid) {
+        const statusMap: Record<string, string> = {
+          queued: "SENT", sending: "SENT", sent: "SENT",
+          delivered: "DELIVERED", read: "DELIVERED",
+          failed: "FAILED", undelivered: "FAILED",
+        };
+        const mapped = statusMap[messageStatus];
+        if (mapped) await admin.from("messages").update({ status: mapped }).eq("fonnte_message_id", messageSid);
       }
-    }
-    // Also reject if sender or target equals blocked device (covers fromMe mirrors without device field)
-    const senderN = sender ? normalizePhone(String(sender)) : "";
-    const targetN = normalizePhone(String(payload.target || payload.to || payload.receiver || payload.recipient || ""));
-    if (BLOCKED_DEVICES.some((d) => {
-      const n = normalizePhone(d);
-      return n === senderN || n === targetN;
-    })) {
-      return json({ ok: true, skip: "blocked-device-party" });
+      return json({ ok: true, kind: "status-callback", messageStatus });
     }
 
-    if (!sender) return json({ ok: false, error: "no sender" }, 400);
+    const from = payload.From || payload.from;
+    const to = payload.To || payload.to;
+    const rawMessage = String(payload.Body || payload.body || "");
+    const message = rawMessage.trim();
+    const waName = (payload.ProfileName || payload.WaId || "").toString().trim() || null;
+    const numMedia = Number(payload.NumMedia || 0);
 
-    if (!rawMessage && !mediaUrl && (payload.state || payload.status)) return json({ ok: true, skip: "status-callback" });
+    if (!from) return json({ ok: false, error: "no From" }, 400);
 
-    // For fromMe (device-sent outbound), `sender` is OUR device; the recipient is in payload.target/to/receiver.
-    const target = (payload.target || payload.to || payload.receiver || payload.recipient || "").toString();
-    const contactNumber = fromMe ? normalizePhone(target) : normalizePhone(sender);
-
+    const contactNumber = normalizePhone(String(from));
     if (!contactNumber || contactNumber.length < 6) return json({ ok: true, skip: "no-contact-number" });
 
+    // Load Twilio settings for potential outbound bot replies & auth for media download
     const { data: settingsRows } = await admin.from("system_settings").select("key,value")
-      .in("key", ["fonnte_device", "fonnte_api_key", "active_workflow_id"]);
+      .in("key", ["twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from", "active_workflow_id"]);
     const settings: Record<string, string> = {};
     (settingsRows || []).forEach((r: any) => { settings[r.key] = r.value; });
 
-    // Find/create contact based on the customer's number (not the device)
+    // Skip agent phone bounces
     let { data: contact } = await admin.from("contacts").select("*").eq("whatsapp_number", contactNumber).maybeSingle();
-    const isNewContact = !contact;
     if (!contact) {
-      // Skip if the number belongs to a known agent — notif WA to agent should not create an inbox thread
       const { data: agentMatch } = await admin.from("profiles").select("id, phone").not("phone", "is", null);
       const agentPhones = new Set((agentMatch || []).map((a: any) => normalizePhone(String(a.phone))));
       if (agentPhones.has(contactNumber)) return json({ ok: true, skip: "agent-phone" });
@@ -110,13 +95,9 @@ Deno.serve(async (req) => {
       let contentCodeId: string | null = null;
       let contentProductId: string | null = null;
       let source = "organik";
-      if (!fromMe && message) {
+      if (message) {
         const { data: codes } = await admin.from("content_codes").select("id, code, product_id").eq("is_active", true);
         const upperMsg = String(message).toUpperCase();
-        // Detect code anywhere in the message (front, middle, or end) using
-        // word boundaries so codes surrounded by spaces, punctuation, or line
-        // breaks all match — but codes embedded inside a longer alphanumeric
-        // token don't produce false positives.
         for (const c of (codes || [])) {
           const raw = String(c.code || "").trim().toUpperCase();
           if (!raw) continue;
@@ -132,14 +113,13 @@ Deno.serve(async (req) => {
       }
 
       const { data: newC } = await admin.from("contacts").insert({
-        whatsapp_number: contactNumber, full_name: fromMe ? null : waName, stage_id: defaultStage?.id || null,
+        whatsapp_number: contactNumber, full_name: waName, stage_id: defaultStage?.id || null,
         source, content_code_id: contentCodeId,
         interested_product_id: contentProductId,
         last_interaction_at: new Date().toISOString(), total_messages: 0,
       }).select().single();
       contact = newC!;
-
-    } else if (!fromMe && !contact.full_name && waName) {
+    } else if (!contact.full_name && waName) {
       await admin.from("contacts").update({ full_name: waName }).eq("id", contact.id);
       contact.full_name = waName;
     }
@@ -148,85 +128,55 @@ Deno.serve(async (req) => {
     if (!conv) {
       const { data: newConv } = await admin.from("conversations").insert({
         contact_id: contact.id, status: "OPEN",
-        first_inbound_at: fromMe ? null : new Date().toISOString(),
+        first_inbound_at: new Date().toISOString(),
       }).select().single();
       conv = newConv!;
     }
 
-    // Duplicate guard by fonnte id
-    if (fonnteMsgId) {
-      const { data: dup } = await admin.from("messages").select("id").eq("fonnte_message_id", String(fonnteMsgId)).limit(1).maybeSingle();
+    // Duplicate guard by MessageSid
+    if (messageSid) {
+      const { data: dup } = await admin.from("messages").select("id").eq("fonnte_message_id", messageSid).limit(1).maybeSingle();
       if (dup) return json({ ok: true, skip: "duplicate-id" });
     }
 
-    // ===== Outbound device mirror (fromMe = true) =====
-    if (fromMe) {
-      // Reject mirror from a different device on the same Fonnte account
-      const expectedDev = settings.fonnte_device ? normalizePhone(settings.fonnte_device) : null;
-      if (expectedDev && deviceField) {
-        const dev = normalizePhone(String(deviceField));
-        if (dev && dev !== expectedDev) return json({ ok: true, skip: "mirror-other-device", device: dev, expected: expectedDev });
+    // Handle media: Twilio media URLs require Basic auth; download and re-host in storage
+    let storedMediaUrl: string | null = null;
+    let mediaMime = "";
+    if (numMedia > 0 && settings.twilio_account_sid && settings.twilio_auth_token) {
+      try {
+        const mUrl = String(payload.MediaUrl0 || "");
+        mediaMime = String(payload.MediaContentType0 || "");
+        if (mUrl) {
+          const basic = btoa(`${settings.twilio_account_sid}:${settings.twilio_auth_token}`);
+          const mres = await fetch(mUrl, { headers: { Authorization: `Basic ${basic}` }, redirect: "follow" });
+          if (mres.ok) {
+            const buf = new Uint8Array(await mres.arrayBuffer());
+            const ext = mediaMime.startsWith("image/") ? mediaMime.split("/")[1]
+              : mediaMime.startsWith("audio/") ? mediaMime.split("/")[1]
+              : (mediaMime.split("/")[1] || "bin");
+            const path = `inbound/${contact.id}/${Date.now()}.${ext}`;
+            const { error: upErr } = await admin.storage.from("chat-media").upload(path, buf, {
+              contentType: mediaMime || "application/octet-stream",
+              upsert: false,
+            });
+            if (!upErr) {
+              const { data: signed } = await admin.storage.from("chat-media").createSignedUrl(path, 60 * 60 * 24 * 365);
+              storedMediaUrl = signed?.signedUrl || null;
+            }
+          }
+        }
+      } catch (e) {
+        console.error("media download err", e);
       }
-      // Echo guard: ignore messages we already saved (sent from inbox)
-      if (hasWatermark) return json({ ok: true, skip: "watermark-echo" });
-
-      const twoMinAgo = new Date(Date.now() - 2 * 60_000).toISOString();
-      const { data: echoMatch } = await admin.from("messages").select("id")
-        .eq("conversation_id", conv.id).eq("direction", "OUTBOUND")
-        .eq("content", message).gte("sent_at", twoMinAgo).limit(1).maybeSingle();
-      if (echoMatch) return json({ ok: true, skip: "echo-content" });
-
-      const msgType = mediaUrl ? detectMediaType(mediaUrl, mediaExt) : "TEXT";
-      // Attribute mirror to the conversation's active agent (assigned, else last replier)
-      const { data: convInfo } = await admin.from("conversations")
-        .select("assigned_agent_id,last_replied_by_id").eq("id", conv.id).maybeSingle();
-      const attributedAgent = convInfo?.assigned_agent_id || convInfo?.last_replied_by_id || null;
-      const insert: any = {
-        conversation_id: conv.id, direction: "OUTBOUND", type: msgType,
-        content: message || (mediaUrl ? "(attachment)" : ""),
-        status: "DELIVERED", sent_by_id: attributedAgent,
-        media_url: mediaUrl,
-      };
-      if (fonnteMsgId) insert.fonnte_message_id = String(fonnteMsgId);
-      await admin.from("messages").insert(insert);
-
-      await admin.from("conversations").update({
-        last_message_at: new Date().toISOString(),
-        last_message_preview: (message || "(attachment)").slice(0, 100),
-      }).eq("id", conv.id);
-
-      return json({ ok: true, mirrored: "device-outbound" });
     }
 
-    // Watermark check only applies to inbound text (filter our own outbound bounce-backs)
-    if (hasWatermark) return json({ ok: true, skip: "watermark-echo" });
-
-    const deviceNumber = settings.fonnte_device ? normalizePhone(settings.fonnte_device) : null;
-    if (deviceNumber && contactNumber === deviceNumber) return json({ ok: true, skip: "self-device" });
-    if (deviceField && normalizePhone(String(deviceField)) === contactNumber) return json({ ok: true, skip: "device-equals-sender" });
-    // Reject events from other devices on the same Fonnte account
-    if (deviceNumber && deviceField) {
-      const dev = normalizePhone(String(deviceField));
-      if (dev && dev !== deviceNumber) return json({ ok: true, skip: "other-device", device: dev, expected: deviceNumber });
-    }
-
-
-    // Echo content guard for inbound (rare but possible)
-    const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString();
-    if (message) {
-      const { data: echoMatch } = await admin.from("messages").select("id")
-        .eq("conversation_id", conv.id).eq("direction", "OUTBOUND")
-        .eq("content", message).gte("sent_at", fiveMinAgo).limit(1).maybeSingle();
-      if (echoMatch) return json({ ok: true, skip: "echo-content" });
-    }
-
-    const msgType = mediaUrl ? detectMediaType(mediaUrl, mediaExt) : "TEXT";
+    const msgType = storedMediaUrl ? detectMediaType(mediaMime, storedMediaUrl) : "TEXT";
     const insert: any = {
       conversation_id: conv.id, direction: "INBOUND", type: msgType,
-      content: message || (mediaUrl ? "(attachment)" : ""),
-      status: "DELIVERED", media_url: mediaUrl,
+      content: message || (storedMediaUrl ? "(attachment)" : ""),
+      status: "DELIVERED", media_url: storedMediaUrl,
     };
-    if (fonnteMsgId) insert.fonnte_message_id = String(fonnteMsgId);
+    if (messageSid) insert.fonnte_message_id = messageSid;
     await admin.from("messages").insert(insert);
 
     await admin.from("conversations").update({
@@ -242,7 +192,7 @@ Deno.serve(async (req) => {
     }).eq("id", contact.id);
 
     if (contact.chatbot_state !== "done" && settings.active_workflow_id && message) {
-      await runWorkflow(admin, contact, message, conv.id, settings.fonnte_api_key, settings.active_workflow_id, settings.fonnte_device);
+      await runWorkflow(admin, contact, message, conv.id, settings);
     }
 
     return json({ ok: true });
@@ -252,7 +202,32 @@ Deno.serve(async (req) => {
   }
 });
 
-async function runWorkflow(admin: any, contact: any, message: string, convId: string, api_key: string | undefined, workflowId: string, deviceNum?: string) {
+async function sendViaTwilio(settings: Record<string, string>, toNumber: string, text: string): Promise<string | null> {
+  const sid = settings.twilio_account_sid, tok = settings.twilio_auth_token, from = settings.twilio_whatsapp_from;
+  if (!sid || !tok || !from) return null;
+  const toWa = (n: string) => {
+    let x = String(n).replace(/^whatsapp:/i, "").replace(/[^\d+]/g, "");
+    if (!x.startsWith("+")) x = "+" + x.replace(/^\+*/, "");
+    return `whatsapp:${x}`;
+  };
+  const fromWa = from.startsWith("whatsapp:") ? from
+    : `whatsapp:${from.startsWith("+") ? from : "+" + from.replace(/[^\d]/g, "")}`;
+  const fd = new URLSearchParams();
+  fd.append("From", fromWa);
+  fd.append("To", toWa(toNumber));
+  fd.append("Body", text);
+  const basic = btoa(`${sid}:${tok}`);
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Messages.json`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: fd,
+  });
+  const data = await res.json().catch(() => ({} as any));
+  return data?.sid ? String(data.sid) : null;
+}
+
+async function runWorkflow(admin: any, contact: any, message: string, convId: string, settings: Record<string, string>) {
+  const workflowId = settings.active_workflow_id;
   const { data: wf } = await admin.from("workflows").select("id,status,is_enabled").eq("id", workflowId).maybeSingle();
   if (!wf || wf.status !== "published" || !wf.is_enabled) return;
   const { data: steps } = await admin.from("workflow_steps").select("*").eq("workflow_id", workflowId).order("position");
@@ -265,7 +240,6 @@ async function runWorkflow(admin: any, contact: any, message: string, convId: st
   const findIndex = (id: string | null) => id ? steps.findIndex((s: any) => s.id === id) : -1;
   let idx = findIndex(state);
 
-  // Stale state (step no longer exists in current workflow) — mark done, don't restart & spam
   if (state && idx < 0) {
     await admin.from("contacts").update({ chatbot_state: "done" }).eq("id", contact.id);
     return;
@@ -275,7 +249,7 @@ async function runWorkflow(admin: any, contact: any, message: string, convId: st
     const cur = steps[idx];
     const result = await consumeAnswer(admin, cur, message);
     if (!result.ok) {
-      await sendReply(admin, contact, convId, result.error || "Mohon coba lagi.", api_key, deviceNum);
+      await sendReply(admin, contact, convId, result.error || "Mohon coba lagi.", settings);
       return;
     }
     data[cur.id] = result.value;
@@ -301,13 +275,13 @@ async function runWorkflow(admin: any, contact: any, message: string, convId: st
 
     if (step.type === "message") {
       const text = await renderPrompt(admin, step, data);
-      await sendReply(admin, contact, convId, text, api_key, deviceNum);
+      await sendReply(admin, contact, convId, text, settings);
       idx++; continue;
     }
 
     if (step.type === "closing") {
       const text = await renderPrompt(admin, step, data);
-      await sendReply(admin, contact, convId, text, api_key, deviceNum);
+      await sendReply(admin, contact, convId, text, settings);
       contactUpdates.chatbot_state = "done";
       contactUpdates.chatbot_data = data;
       await admin.from("contacts").update(contactUpdates).eq("id", contact.id);
@@ -315,7 +289,7 @@ async function runWorkflow(admin: any, contact: any, message: string, convId: st
     }
 
     const prompt = await renderPrompt(admin, step, data);
-    await sendReply(admin, contact, convId, prompt, api_key, deviceNum);
+    await sendReply(admin, contact, convId, prompt, settings);
     contactUpdates.chatbot_state = step.id;
     contactUpdates.chatbot_data = data;
     await admin.from("contacts").update(contactUpdates).eq("id", contact.id);
@@ -339,14 +313,11 @@ function applyMapping(updates: any, mapping: string, value: any) {
   }
   if (UUID.has(field)) {
     const s = String(value || "").trim();
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) {
-      updates[field] = s;
-    }
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) updates[field] = s;
     return;
   }
   updates[field] = value;
 }
-
 
 async function renderPrompt(admin: any, step: any, _data: any): Promise<string> {
   let text = step.prompt || step.label || "";
@@ -415,33 +386,19 @@ async function consumeAnswer(admin: any, step: any, message: string): Promise<{ 
   }
 }
 
-async function sendReply(admin: any, contact: any, convId: string, text: string, api_key?: string, deviceNum?: string) {
+async function sendReply(admin: any, contact: any, convId: string, text: string, settings: Record<string, string>) {
   if (!text) return;
-  if (!api_key) { console.warn("no api_key, skip send"); return; }
-
-  // Anti-spam: if the exact same text was already sent as the last OUTBOUND in the last 10 minutes, skip
   const tenMinAgo = new Date(Date.now() - 10 * 60_000).toISOString();
   const { data: recent } = await admin.from("messages").select("id,content")
     .eq("conversation_id", convId).eq("direction", "OUTBOUND")
     .gte("sent_at", tenMinAgo).order("sent_at", { ascending: false }).limit(1).maybeSingle();
-  if (recent && recent.content === text) {
-    console.log("skip duplicate bot reply");
-    return;
-  }
+  if (recent && recent.content === text) return;
 
-  const fd = new FormData();
-  fd.append("target", contact.whatsapp_number);
-  fd.append("message", text);
-  if (deviceNum) fd.append("device", String(deviceNum).replace(/\D/g, ""));
-  fd.append("countryCode", "62");
   try {
-
-    const fres = await fetch("https://api.fonnte.com/send", { method: "POST", headers: { Authorization: api_key }, body: fd });
-    const fdata = await fres.json().catch(() => ({}));
-    const fonnteId = Array.isArray(fdata.id) ? String(fdata.id[0]) : (fdata.id ? String(fdata.id) : null);
+    const sid = await sendViaTwilio(settings, contact.whatsapp_number, text);
     await admin.from("messages").insert({
       conversation_id: convId, direction: "OUTBOUND", type: "TEXT",
-      content: text, status: "SENT", fonnte_message_id: fonnteId,
+      content: text, status: "SENT", fonnte_message_id: sid,
     });
     await admin.from("conversations").update({
       last_message_at: new Date().toISOString(),

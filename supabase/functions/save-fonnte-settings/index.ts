@@ -1,4 +1,5 @@
-// Save Fonnte settings (admin only). Validates key, auto-detects device, supports updates.
+// Save Twilio settings (admin only). Validates SID+Token and stores From number.
+// Kept at path "save-fonnte-settings" for frontend backward-compat.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -9,10 +10,7 @@ const corsHeaders = {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
-  const j = (d: any, s = 200) =>
-    new Response(JSON.stringify(d), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
+  const j = (d: any, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -34,50 +32,52 @@ Deno.serve(async (req) => {
     if (!isAdmin) return j({ error: "Forbidden — admin only" }, 403);
 
     const body = await req.json().catch(() => ({}));
-    const api_key = typeof body.api_key === "string" ? body.api_key.trim() : "";
-    const deviceIn = typeof body.device === "string" ? body.device.trim() : "";
+    const account_sid = typeof body.account_sid === "string" ? body.account_sid.trim() : "";
+    const auth_token = typeof body.auth_token === "string" ? body.auth_token.trim() : "";
+    const whatsapp_from = typeof body.whatsapp_from === "string" ? body.whatsapp_from.trim() : "";
 
-    // Disconnect: when both fields cleared, remove stored settings.
-    if (!api_key && !deviceIn) {
-      await admin.from("system_settings").delete().in("key", ["fonnte_api_key", "fonnte_device"]);
-      return j({ ok: true, disconnected: true, device: null });
+    // Disconnect: all fields empty removes stored settings
+    if (!account_sid && !auth_token && !whatsapp_from) {
+      await admin.from("system_settings").delete().in("key", [
+        "twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from",
+        // clean up legacy Fonnte keys if they linger
+        "fonnte_api_key", "fonnte_device",
+      ]);
+      return j({ ok: true, disconnected: true });
     }
 
-    let detectedDevice: string | null = null;
-    let validateData: any = null;
-    let validateOk = false;
-
-    if (api_key) {
+    let validateOk = false; let validateData: any = null;
+    if (account_sid && auth_token) {
       try {
-        const r = await fetch("https://api.fonnte.com/validate", {
-          method: "GET", headers: { Authorization: api_key },
+        const basic = btoa(`${account_sid}:${auth_token}`);
+        const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(account_sid)}.json`, {
+          headers: { Authorization: `Basic ${basic}` },
         });
         validateData = await r.json().catch(() => ({}));
-        validateOk = r.ok && validateData?.status !== false;
-        const d = validateData?.device;
-        if (Array.isArray(d)) detectedDevice = String(d[0] || "");
-        else if (d) detectedDevice = String(d);
+        validateOk = r.ok && !validateData?.code;
       } catch (e) {
-        console.error("validate fail", e);
+        console.error("twilio validate fail", e);
       }
-
-      const { error: e1 } = await admin
-        .from("system_settings")
-        .upsert({ key: "fonnte_api_key", value: api_key, updated_by: u.user.id, updated_at: new Date().toISOString() }, { onConflict: "key" });
-      if (e1) return j({ error: "Save API key failed: " + e1.message }, 500);
     }
 
-    const finalDevice = deviceIn || detectedDevice || "";
-    if (finalDevice) {
-      const { error: e2 } = await admin
+    const now = new Date().toISOString();
+    const rows: { key: string; value: string }[] = [];
+    if (account_sid) rows.push({ key: "twilio_account_sid", value: account_sid });
+    if (auth_token) rows.push({ key: "twilio_auth_token", value: auth_token });
+    if (whatsapp_from) rows.push({ key: "twilio_whatsapp_from", value: whatsapp_from });
+    // Mirror device number for legacy inbox label
+    if (whatsapp_from) rows.push({ key: "fonnte_device", value: whatsapp_from });
+
+    for (const r of rows) {
+      const { error } = await admin
         .from("system_settings")
-        .upsert({ key: "fonnte_device", value: finalDevice, updated_by: u.user.id, updated_at: new Date().toISOString() }, { onConflict: "key" });
-      if (e2) return j({ error: "Save device failed: " + e2.message }, 500);
+        .upsert({ key: r.key, value: r.value, updated_by: u.user.id, updated_at: now }, { onConflict: "key" });
+      if (error) return j({ error: `Save ${r.key} failed: ${error.message}` }, 500);
     }
 
-    return j({ ok: true, device: finalDevice || null, validate_ok: validateOk, validate: validateData });
+    return j({ ok: true, validate_ok: validateOk, validate: validateData });
   } catch (e) {
-    console.error("save-fonnte-settings fatal", e);
+    console.error("save-twilio-settings fatal", e);
     return j({ error: String(e) }, 500);
   }
 });
