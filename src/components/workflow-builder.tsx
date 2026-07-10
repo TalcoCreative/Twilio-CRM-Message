@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Copy, GripVertical, Plus, Trash2, Save, CircleCheck, FileText, Power, ChevronDown, ChevronUp, ArrowLeft } from "lucide-react";
-import { STEP_META, MAPPING_FIELDS, type StepType } from "@/lib/workflow-types";
+import { STEP_META, MAPPING_FIELDS, OPTION_SOURCES, type StepType } from "@/lib/workflow-types";
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent,
 } from "@dnd-kit/core";
@@ -389,23 +389,60 @@ function SortableStepCard({ step, index, steps, expanded, onExpand, onUpdate, on
 function OptionsEditor({ step, onUpdate, locked }: { step: Step; onUpdate: (p: Partial<Step>) => void; locked: boolean }) {
   const cfg = step.config || {};
   const opts: string[] = cfg.options || [];
-  const source = cfg.source || "manual";
+  const source: string = cfg.source || "manual";
+  const [preview, setPreview] = useState<{ id: string; label: string }[]>([]);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
   function setOpts(next: string[]) { onUpdate({ config: { ...cfg, options: next } }); }
+
+  function changeSource(v: string) {
+    const src = OPTION_SOURCES.find((s) => s.value === v);
+    const patch: Partial<Step> = { config: { ...cfg, source: v } };
+    // Auto set mapping sesuai sumber (kalau step mappable)
+    if (src?.mapping && STEP_META[step.type]?.mappable) patch.mapping = src.mapping;
+    if (v === "manual") patch.mapping = step.mapping; // biarkan
+    onUpdate(patch);
+  }
+
+  useEffect(() => {
+    if (source === "manual") { setPreview([]); return; }
+    let cancelled = false;
+    (async () => {
+      setLoadingPreview(true);
+      let rows: { id: string; label: string }[] = [];
+      if (source === "products") {
+        const { data } = await supabase.from("products").select("id,name").eq("is_active", true).order("name");
+        rows = (data || []).map((r: any) => ({ id: r.id, label: r.name }));
+      } else if (source === "stages") {
+        const { data } = await supabase.from("stages").select("id,name,position").order("position");
+        rows = (data || []).map((r: any) => ({ id: r.id, label: r.name }));
+      } else if (source === "content_codes") {
+        const { data } = await supabase.from("content_codes").select("id,code,name").eq("is_active", true).order("code");
+        rows = (data || []).map((r: any) => ({ id: r.id, label: `${r.code} — ${r.name}` }));
+      }
+      if (!cancelled) { setPreview(rows); setLoadingPreview(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [source]);
+
   return (
     <div className="space-y-2">
-      {step.mapping === "contacts.interested_product_id" && (
-        <div className="space-y-1.5">
-          <Label className="text-xs">Sumber Opsi</Label>
-          <Select value={source} onValueChange={(v) => onUpdate({ config: { ...cfg, source: v } })} disabled={locked}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="manual">Manual</SelectItem>
-              <SelectItem value="products">Otomatis dari Katalog Produk</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      {source !== "products" && (
+      <div className="space-y-1.5">
+        <Label className="text-xs">Sumber Opsi</Label>
+        <Select value={source} onValueChange={changeSource} disabled={locked}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {OPTION_SOURCES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <p className="text-[11px] text-muted-foreground">
+          {source === "manual"
+            ? "Opsi diketik manual di bawah."
+            : "Opsi otomatis diambil realtime dari data terkait — tambahkan atau ubah datanya di halamannya, tidak perlu edit workflow."}
+        </p>
+      </div>
+
+      {source === "manual" ? (
         <div className="space-y-1.5">
           <Label className="text-xs">Opsi Pilihan</Label>
           {opts.map((o, i) => (
@@ -416,6 +453,22 @@ function OptionsEditor({ step, onUpdate, locked }: { step: Step; onUpdate: (p: P
             </div>
           ))}
           <Button size="sm" variant="outline" disabled={locked} onClick={() => setOpts([...opts, `Opsi ${opts.length + 1}`])}><Plus className="size-3.5 mr-1" />Tambah Opsi</Button>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Preview Opsi (live dari data)</Label>
+          {loadingPreview && <p className="text-xs text-muted-foreground">Memuat…</p>}
+          {!loadingPreview && !preview.length && <p className="text-xs text-muted-foreground">Belum ada data. Tambahkan di halaman terkait dulu.</p>}
+          {!!preview.length && (
+            <div className="rounded-lg border bg-background p-2 space-y-1 max-h-48 overflow-auto">
+              {preview.map((p, i) => (
+                <div key={p.id} className="flex gap-2 text-xs">
+                  <span className="font-mono text-muted-foreground w-6">{i + 1}.</span>
+                  <span className="truncate">{p.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

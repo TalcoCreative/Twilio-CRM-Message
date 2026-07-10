@@ -35,10 +35,20 @@ export const MAPPING_FIELDS: { value: string; label: string }[] = [
   { value: "contacts.whatsapp_number",      label: "No WhatsApp" },
   { value: "contacts.domicile",             label: "Domisili" },
   { value: "contacts.interested_product_id",label: "Produk (pilih dari katalog)" },
+  { value: "contacts.stage_id",             label: "Stage (pipeline)" },
+  { value: "contacts.content_code_id",      label: "Kategori Pertanyaan / Kode Konten" },
   { value: "contacts.estimated_revenue",    label: "Estimated Revenue (Rp)" },
   { value: "contacts.source",               label: "Source" },
   { value: "contacts.chief_complaint",      label: "Keluhan / Pertanyaan" },
   { value: "contacts.notes",                label: "Catatan" },
   { value: "contacts.document_url",         label: "URL Dokumen / Link" },
+];
+
+// Sumber opsi dinamis untuk step dropdown/radio/checkbox — opsi diambil realtime dari tabel terkait.
+export const OPTION_SOURCES: { value: string; label: string; mapping?: string }[] = [
+  { value: "manual",        label: "Manual (ketik sendiri)" },
+  { value: "products",      label: "Katalog Produk",             mapping: "contacts.interested_product_id" },
+  { value: "stages",        label: "Stages / Pipeline",          mapping: "contacts.stage_id" },
+  { value: "content_codes", label: "Kategori Pertanyaan (Kode Konten)", mapping: "contacts.content_code_id" },
 ];
 
