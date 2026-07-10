@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Copy, GripVertical, Plus, Trash2, Save, CircleCheck, FileText, Power, ChevronDown, ChevronUp, ArrowLeft } from "lucide-react";
-import { STEP_META, MAPPING_FIELDS, type StepType } from "@/lib/workflow-types";
+import { STEP_META, MAPPING_FIELDS, OPTION_SOURCES, type StepType } from "@/lib/workflow-types";
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent,
 } from "@dnd-kit/core";
