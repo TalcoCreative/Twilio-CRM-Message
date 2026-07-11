@@ -41,6 +41,8 @@ type Message = {
   sent_at: string; sent_by_id: string | null; status: string;
   type: MsgType;
   media_url: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
 };
 type QuickReply = { id: string; name: string; content: string; sort_order: number };
 type Product = { id: string; name: string };
