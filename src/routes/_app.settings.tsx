@@ -547,13 +547,6 @@ function GatewayLogsCard() {
   );
 }
 
-function _unusedSpacer() {
-  return null;
-}
-
-function _keepFonnteEnd() {
-  return (
-    <div>
 
 
 
