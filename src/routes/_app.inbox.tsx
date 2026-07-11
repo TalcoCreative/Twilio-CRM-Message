@@ -375,11 +375,14 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     }
   }
 
-  function pickFile(kind: MsgType, accept: string) {
+  function pickFile(kind: MsgType, accept: string, capture: string | null = null) {
     pendingKindRef.current = kind;
     pendingAcceptRef.current = accept;
+    pendingCaptureRef.current = capture;
     if (fileInputRef.current) {
       fileInputRef.current.accept = accept;
+      if (capture) fileInputRef.current.setAttribute("capture", capture);
+      else fileInputRef.current.removeAttribute("capture");
       fileInputRef.current.value = "";
       fileInputRef.current.click();
     }
