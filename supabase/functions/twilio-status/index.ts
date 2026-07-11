@@ -57,9 +57,26 @@ Deno.serve(async (req) => {
     }
     const mapped = STATUS_MAP[messageStatus];
     if (mapped) {
-      await admin.from("messages").update({ status: mapped })
+      const patch: Record<string, any> = { status: mapped };
+      if (mapped === "FAILED") {
+        patch.error_code = errorCode ? String(errorCode) : null;
+        patch.error_message = errorMessage || `Twilio status: ${messageStatus}${errorCode ? ` (code ${errorCode})` : ""}`;
+      }
+      await admin.from("messages").update(patch)
         .eq("fonnte_message_id", messageSid);
     }
+
+    await admin.from("whatsapp_gateway_logs").insert({
+      direction: "STATUS",
+      level: mapped === "FAILED" ? "error" : "info",
+      event: "status",
+      message_sid: messageSid,
+      status: messageStatus,
+      error_code: errorCode ? String(errorCode) : null,
+      error_message: errorMessage || null,
+      payload: payload as any,
+    });
+
     return jsonResponse({
       success: true, status: messageStatus, mapped,
       twilio_code: errorCode, twilio_message: errorMessage,
