@@ -74,6 +74,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingAcceptRef = useRef<string>("*/*");
   const pendingKindRef = useRef<MsgType>("DOCUMENT");
+  const pendingCaptureRef = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordChunksRef = useRef<Blob[]>([]);
   const [recording, setRecording] = useState(false);
