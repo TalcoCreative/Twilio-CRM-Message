@@ -485,9 +485,69 @@ function FonnteTab() {
           </Button>
         </CardContent>
       </Card>
+
+      <GatewayLogsCard />
     </div>
   );
 }
+
+function GatewayLogsCard() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"all" | "error">("all");
+
+  async function load() {
+    setLoading(true);
+    let q = supabase.from("whatsapp_gateway_logs").select("*").order("created_at", { ascending: false }).limit(100);
+    if (filter === "error") q = q.eq("level", "error");
+    const { data } = await q;
+    setLogs(data || []);
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [filter]);
+  useEffect(() => {
+    const ch = supabase.channel("gw-logs")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_gateway_logs" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [filter]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">Log Gateway WhatsApp</CardTitle>
+        <CardDescription>Riwayat kirim, status pengiriman, dan error terbaru dari Twilio.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="flex gap-2">
+          <Button size="sm" variant={filter === "all" ? "default" : "outline"} onClick={() => setFilter("all")}>Semua</Button>
+          <Button size="sm" variant={filter === "error" ? "default" : "outline"} onClick={() => setFilter("error")}>Error</Button>
+          <Button size="sm" variant="ghost" onClick={load} className="ml-auto">Refresh</Button>
+        </div>
+        {loading && <div className="text-xs text-muted-foreground">Memuat…</div>}
+        {!loading && logs.length === 0 && <div className="text-xs text-muted-foreground p-3">Belum ada log.</div>}
+        <div className="max-h-96 overflow-auto space-y-1.5">
+          {logs.map((l) => (
+            <div key={l.id} className={`text-[11px] p-2 rounded-md border ${l.level === "error" ? "bg-rose-500/10 border-rose-500/30" : "bg-muted/40"}`}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono opacity-70">{new Date(l.created_at).toLocaleString("id-ID")}</span>
+                <span className="px-1.5 py-0.5 rounded bg-background border font-medium">{l.direction}</span>
+                <span className="px-1.5 py-0.5 rounded bg-background border">{l.event}</span>
+                {l.status && <span className="px-1.5 py-0.5 rounded bg-background border">{l.status}</span>}
+                {l.error_code && <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-700 dark:text-rose-300">code {l.error_code}</span>}
+              </div>
+              {l.to_number && <div className="mt-1 opacity-80">→ {l.to_number}</div>}
+              {l.error_message && <div className="mt-1 text-rose-700 dark:text-rose-300">{l.error_message}</div>}
+              {l.message_sid && <div className="mt-0.5 font-mono opacity-60 truncate">SID: {l.message_sid}</div>}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+
 
 
 function ProductsTab() {

@@ -82,6 +82,14 @@ Deno.serve(async (req) => {
     });
 
     if (!send.ok) {
+      await admin.from("whatsapp_gateway_logs").insert({
+        direction: "OUTBOUND", level: "error", event: "send",
+        conversation_id: convId || null, to_number: toNumber || null,
+        status: String(send.status || ""),
+        error_code: send.errorCode ? String(send.errorCode) : null,
+        error_message: send.errorMessage || null,
+        payload: send.raw as any,
+      });
       return jsonResponse({
         success: false,
         status: send.status,
@@ -92,7 +100,13 @@ Deno.serve(async (req) => {
       }, send.status && send.status >= 400 ? send.status : 502);
     }
 
-    if (is_test) return jsonResponse({ success: true, ok: true, sid: send.sid, twilio: send.raw });
+    if (is_test) {
+      await admin.from("whatsapp_gateway_logs").insert({
+        direction: "OUTBOUND", level: "info", event: "send_test",
+        message_sid: send.sid || null, to_number: toNumber || null, status: "sent",
+      });
+      return jsonResponse({ success: true, ok: true, sid: send.sid, twilio: send.raw });
+    }
 
     const messageSid = send.sid || null;
 
@@ -113,6 +127,12 @@ Deno.serve(async (req) => {
       media_url: mediaUrl,
     }).select().single();
     if (insErr) return jsonResponse({ success: false, error: insErr.message }, 500);
+
+    await admin.from("whatsapp_gateway_logs").insert({
+      direction: "OUTBOUND", level: "info", event: "send",
+      message_sid: messageSid, conversation_id: convId || null,
+      to_number: toNumber || null, status: "sent",
+    });
 
     const { data: conv2 } = await admin.from("conversations")
       .select("first_response_at").eq("id", convId).maybeSingle();

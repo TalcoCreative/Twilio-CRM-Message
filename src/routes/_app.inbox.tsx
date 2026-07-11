@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Send, Search, Loader2, User as UserIcon, Tag, Zap, FileText, MoreVertical, StickyNote, MessageSquare, Trash2, Package, Smartphone, MailOpen, Paperclip, Image as ImageIcon, Film, Mic, StopCircle, Sticker, File as FileIcon } from "lucide-react";
+import { Send, Search, Loader2, User as UserIcon, Tag, Zap, FileText, MoreVertical, StickyNote, MessageSquare, Trash2, Package, Smartphone, MailOpen, Paperclip, Image as ImageIcon, Film, Mic, StopCircle, Sticker, File as FileIcon, Camera, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -41,6 +41,8 @@ type Message = {
   sent_at: string; sent_by_id: string | null; status: string;
   type: MsgType;
   media_url: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
 };
 type QuickReply = { id: string; name: string; content: string; sort_order: number };
 type Product = { id: string; name: string };
@@ -72,6 +74,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingAcceptRef = useRef<string>("*/*");
   const pendingKindRef = useRef<MsgType>("DOCUMENT");
+  const pendingCaptureRef = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordChunksRef = useRef<Blob[]>([]);
   const [recording, setRecording] = useState(false);
@@ -372,11 +375,14 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     }
   }
 
-  function pickFile(kind: MsgType, accept: string) {
+  function pickFile(kind: MsgType, accept: string, capture: string | null = null) {
     pendingKindRef.current = kind;
     pendingAcceptRef.current = accept;
+    pendingCaptureRef.current = capture;
     if (fileInputRef.current) {
       fileInputRef.current.accept = accept;
+      if (capture) fileInputRef.current.setAttribute("capture", capture);
+      else fileInputRef.current.removeAttribute("capture");
       fileInputRef.current.value = "";
       fileInputRef.current.click();
     }
@@ -1034,9 +1040,24 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                           {m.media_url && m.type !== "TEXT" && m.content && m.content !== "(attachment)" && (
                             <div className="mt-1">{m.content}</div>
                           )}
-                          <div className="text-[10px] opacity-60 mt-1 text-right">
-                            {curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                          <div className="text-[10px] opacity-60 mt-1 text-right flex items-center justify-end gap-1">
+                            {out && m.status === "FAILED" && (
+                              <span className="text-rose-500 font-medium">Gagal</span>
+                            )}
+                            {out && m.status === "SENT" && <span>✓</span>}
+                            {out && m.status === "DELIVERED" && <span className="text-sky-500">✓✓</span>}
+                            <span>{curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}</span>
                           </div>
+                          {out && m.status === "FAILED" && (
+                            <div className="mt-1 text-[10px] flex items-start gap-1 text-rose-600 bg-rose-500/10 border border-rose-500/30 rounded-md px-2 py-1">
+                              <AlertTriangle className="size-3 mt-0.5 shrink-0" />
+                              <span>
+                                Belum terkirim{m.error_code ? ` (kode ${m.error_code})` : ""}.{" "}
+                                {m.error_message || "Cek nomor tujuan dan konfigurasi Twilio."}{" "}
+                                Buka <a href="/settings" className="underline">Settings → WhatsApp Gateway</a> untuk cek log.
+                              </span>
+                            </div>
+                          )}
                         </div>
                         )}
                       </div>
@@ -1047,26 +1068,30 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
               </div>
 
-              <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="border-t p-3 bg-card space-y-2">
-                <div className="flex flex-wrap gap-1.5 items-center">
-                  <div className="inline-flex rounded-full border bg-background p-0.5 text-[11px]">
+              <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="border-t p-2 md:p-3 bg-card space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <div className="inline-flex rounded-full border bg-background p-0.5 text-[11px] shrink-0">
                     <button type="button" onClick={() => setMode("reply")}
-                      className={cn("px-2.5 py-1 rounded-full flex items-center gap-1 transition-colors",
+                      title="Balas WhatsApp"
+                      className={cn("px-2 py-1 rounded-full flex items-center gap-1 transition-colors",
                         mode === "reply" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
-                      <MessageSquare className="size-3" /> Balas WA
+                      <MessageSquare className="size-3" />
+                      <span className="hidden sm:inline">Balas WA</span>
                     </button>
                     <button type="button" onClick={() => setMode("note")}
-                      className={cn("px-2.5 py-1 rounded-full flex items-center gap-1 transition-colors",
+                      title="Catatan internal"
+                      className={cn("px-2 py-1 rounded-full flex items-center gap-1 transition-colors",
                         mode === "note" ? "bg-amber-500 text-white" : "text-muted-foreground")}>
-                      <StickyNote className="size-3" /> Catatan
+                      <StickyNote className="size-3" />
+                      <span className="hidden sm:inline">Catatan</span>
                     </button>
                   </div>
                   {mode === "reply" && (
                     <>
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button type="button" size="sm" variant="outline" className="h-7 text-xs gap-1">
-                            <Zap className="size-3" /> Quick Replies
+                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" title="Quick Replies">
+                            <Zap className="size-4" />
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-80 p-1" align="start">
@@ -1084,50 +1109,42 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                           </div>
                         </PopoverContent>
                       </Popover>
-                      <div className="hidden sm:flex flex-wrap gap-1.5">
-                        {quickReplies.slice(0, 3).map((q) => (
-                          <button key={q.id} type="button" onClick={() => applyQuickReply(q.content)}
-                            className="text-[11px] px-2 py-1 rounded-full border bg-background hover:bg-accent transition-colors flex items-center gap-1">
-                            <FileText className="size-3" /> {q.name}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" disabled={uploading || recording} title="Lampiran">
+                            <Paperclip className="size-4" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-1" align="start">
+                          <button type="button" onClick={() => pickFile("IMAGE", "image/*", "environment")}
+                            className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                            <Camera className="size-4" /> Kamera
                           </button>
-                        ))}
-                      </div>
+                          <button type="button" onClick={() => pickFile("IMAGE", "image/*")}
+                            className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                            <ImageIcon className="size-4" /> Foto dari galeri
+                          </button>
+                          <button type="button" onClick={() => pickFile("VIDEO", "video/*")}
+                            className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                            <Film className="size-4" /> Video
+                          </button>
+                          <button type="button" onClick={() => pickFile("AUDIO", "audio/*")}
+                            className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                            <FileIcon className="size-4" /> Audio
+                          </button>
+                          <button type="button" onClick={() => pickFile("DOCUMENT", ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,application/pdf")}
+                            className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                            <FileText className="size-4" /> PDF / Dokumen
+                          </button>
+                          <button type="button" onClick={() => pickFile("STICKER", "image/webp,image/png")}
+                            className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
+                            <Sticker className="size-4" /> Stiker
+                          </button>
+                        </PopoverContent>
+                      </Popover>
                     </>
                   )}
-                  {mode === "reply" && (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button type="button" size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={uploading || recording}>
-                          <Paperclip className="size-3" /> Lampiran
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-56 p-1" align="start">
-                        <button type="button" onClick={() => pickFile("IMAGE", "image/*")}
-                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
-                          <ImageIcon className="size-4" /> Foto
-                        </button>
-                        <button type="button" onClick={() => pickFile("VIDEO", "video/*")}
-                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
-                          <Film className="size-4" /> Video
-                        </button>
-                        <button type="button" onClick={() => pickFile("AUDIO", "audio/*")}
-                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
-                          <FileIcon className="size-4" /> Audio
-                        </button>
-                        <button type="button" onClick={() => pickFile("DOCUMENT", ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,application/pdf")}
-                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
-                          <FileText className="size-4" /> PDF / Dokumen
-                        </button>
-                        <button type="button" onClick={() => pickFile("STICKER", "image/webp,image/png")}
-                          className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-xs flex items-center gap-2">
-                          <Sticker className="size-4" /> Stiker
-                        </button>
-                      </PopoverContent>
-                    </Popover>
-                  )}
                   <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePicked} />
-                </div>
-                <div className="flex gap-2 items-end">
                   <Textarea
                     value={text}
                     onChange={(e) => setText(e.target.value)}
@@ -1144,31 +1161,31 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     }}
                     rows={1}
                     placeholder={mode === "note"
-                      ? "Catatan internal — hanya dilihat agent..."
-                      : recording ? "Merekam voice note..." : `Balas sebagai ${agentName(user?.id || null)}...`}
+                      ? "Catatan internal..."
+                      : recording ? "Merekam voice..." : "Ketik pesan..."}
                     disabled={sending || uploading || recording}
                     className={cn(
-                      "min-h-[40px] resize-none overflow-y-auto leading-snug",
+                      "min-h-[38px] resize-none overflow-y-auto leading-snug flex-1",
                       mode === "note" ? "bg-amber-50 dark:bg-amber-500/10 border-amber-300" : ""
                     )}
                     style={{ maxHeight: "50vh" }}
                     autoFocus
                   />
-
                   {mode === "reply" && (
                     recording ? (
-                      <Button type="button" onClick={stopVoiceNote} className="bg-rose-500 hover:bg-rose-600 text-white">
+                      <Button type="button" size="icon" onClick={stopVoiceNote} className="h-9 w-9 shrink-0 bg-rose-500 hover:bg-rose-600 text-white">
                         <StopCircle className="size-4" />
                       </Button>
                     ) : (
-                      <Button type="button" variant="outline" onClick={startVoiceNote} disabled={uploading || sending} title="Rekam voice note">
-                        <Mic className="size-4" />
-                      </Button>
+                      !text.trim() && (
+                        <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0" onClick={startVoiceNote} disabled={uploading || sending} title="Rekam voice note">
+                          <Mic className="size-4" />
+                        </Button>
+                      )
                     )
                   )}
-                  <Button type="submit" disabled={sending || uploading || recording || !text.trim()}
-                    className={mode === "note" ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}>
-
+                  <Button type="submit" size="icon" disabled={sending || uploading || recording || !text.trim()}
+                    className={cn("h-9 w-9 shrink-0", mode === "note" ? "bg-amber-500 hover:bg-amber-600 text-white" : "")}>
                     {sending || uploading ? <Loader2 className="size-4 animate-spin" /> :
                       mode === "note" ? <StickyNote className="size-4" /> : <Send className="size-4" />}
                   </Button>

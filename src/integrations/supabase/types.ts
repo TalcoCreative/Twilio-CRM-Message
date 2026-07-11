@@ -465,6 +465,8 @@ export type Database = {
           conversation_id: string
           created_at: string
           direction: Database["public"]["Enums"]["message_direction"]
+          error_code: string | null
+          error_message: string | null
           fonnte_message_id: string | null
           id: string
           media_url: string | null
@@ -479,6 +481,8 @@ export type Database = {
           conversation_id: string
           created_at?: string
           direction: Database["public"]["Enums"]["message_direction"]
+          error_code?: string | null
+          error_message?: string | null
           fonnte_message_id?: string | null
           id?: string
           media_url?: string | null
@@ -493,6 +497,8 @@ export type Database = {
           conversation_id?: string
           created_at?: string
           direction?: Database["public"]["Enums"]["message_direction"]
+          error_code?: string | null
+          error_message?: string | null
           fonnte_message_id?: string | null
           id?: string
           media_url?: string | null
@@ -739,6 +745,51 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      whatsapp_gateway_logs: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          direction: string
+          error_code: string | null
+          error_message: string | null
+          event: string
+          id: string
+          level: string
+          message_sid: string | null
+          payload: Json | null
+          status: string | null
+          to_number: string | null
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          direction: string
+          error_code?: string | null
+          error_message?: string | null
+          event: string
+          id?: string
+          level?: string
+          message_sid?: string | null
+          payload?: Json | null
+          status?: string | null
+          to_number?: string | null
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          direction?: string
+          error_code?: string | null
+          error_message?: string | null
+          event?: string
+          id?: string
+          level?: string
+          message_sid?: string | null
+          payload?: Json | null
+          status?: string | null
+          to_number?: string | null
         }
         Relationships: []
       }
