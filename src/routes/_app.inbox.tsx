@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -932,25 +932,58 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
               </header>
 
               <div ref={scrollRef} className="flex-1 overflow-auto p-4 space-y-3 bg-muted/30">
-                {messages.map((m) => {
+                {messages.map((m, idx) => {
+                  const prev = idx > 0 ? messages[idx - 1] : null;
+                  const curDate = new Date(m.sent_at);
+                  const prevDate = prev ? new Date(prev.sent_at) : null;
+                  const sameDay = prevDate &&
+                    curDate.getFullYear() === prevDate.getFullYear() &&
+                    curDate.getMonth() === prevDate.getMonth() &&
+                    curDate.getDate() === prevDate.getDate();
+                  const showSep = !sameDay;
+                  const today = new Date();
+                  const yest = new Date(); yest.setDate(today.getDate() - 1);
+                  const isSameDate = (a: Date, b: Date) =>
+                    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+                  let sepLabel = "";
+                  if (showSep) {
+                    if (isSameDate(curDate, today)) sepLabel = "Hari ini";
+                    else if (isSameDate(curDate, yest)) sepLabel = "Kemarin";
+                    else {
+                      const diffDays = Math.floor((today.getTime() - curDate.getTime()) / 86400000);
+                      sepLabel = diffDays < 7
+                        ? curDate.toLocaleDateString("id-ID", { weekday: "long" })
+                        : curDate.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: curDate.getFullYear() !== today.getFullYear() ? "numeric" : undefined });
+                    }
+                  }
+                  const separator = showSep ? (
+                    <div key={`sep-${m.id}`} className="sticky top-2 z-10 flex justify-center my-2">
+                      <span className="text-[11px] font-medium px-3 py-1 rounded-full bg-background/80 backdrop-blur border shadow-sm text-muted-foreground">
+                        {sepLabel}
+                      </span>
+                    </div>
+                  ) : null;
+
                   if (m.type === "INTERNAL_NOTE") {
                     return (
-                      <div key={m.id} className="flex justify-center">
-                        <div className="max-w-[85%] rounded-xl border border-amber-400/50 bg-amber-100/70 dark:bg-amber-500/10 px-3 py-2 text-xs shadow-sm">
-                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 mb-1">
-                            <StickyNote className="size-3" />
-                            Catatan Internal · {agentName(m.sent_by_id)}
-                          </div>
-                          <div className="whitespace-pre-wrap break-words text-amber-900 dark:text-amber-100">{m.content}</div>
-                          <div className="text-[10px] opacity-60 mt-1 text-right">
-                            {new Date(m.sent_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                      <React.Fragment key={m.id}>
+                        {separator}
+                        <div className="flex justify-center">
+                          <div className="max-w-[85%] rounded-xl border border-amber-400/50 bg-amber-100/70 dark:bg-amber-500/10 px-3 py-2 text-xs shadow-sm">
+                            <div className="flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 mb-1">
+                              <StickyNote className="size-3" />
+                              Catatan Internal · {agentName(m.sent_by_id)}
+                            </div>
+                            <div className="whitespace-pre-wrap break-words text-amber-900 dark:text-amber-100">{m.content}</div>
+                            <div className="text-[10px] opacity-60 mt-1 text-right">
+                              {curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      </React.Fragment>
                     );
                   }
                   const out = m.direction === "OUTBOUND";
-                  // Attribute outbound to the message sender; if missing, fall back to conv's assigned/last replier
                   const fallbackAgent = active.assigned_agent_id || active.last_replied_by_id || null;
                   const effectiveAgentId = m.sent_by_id || fallbackAgent;
                   const senderLabel = out
@@ -958,55 +991,59 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     : (active.contact?.full_name || "Pelanggan");
                   const isSticker = m.type === "STICKER";
                   return (
-                    <div key={m.id} className={cn("flex flex-col gap-0.5", out ? "items-end" : "items-start")}>
-                      <span className="text-[10px] px-1 text-muted-foreground">
-                        {senderLabel}
-                      </span>
-                      {isSticker && m.media_url ? (
-                        <div className="max-w-[40%]">
-                          <img src={m.media_url} alt="sticker" className="max-h-40 object-contain" />
-                          <div className="text-[10px] opacity-60 mt-0.5 text-right">
-                            {new Date(m.sent_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                    <React.Fragment key={m.id}>
+                      {separator}
+                      <div className={cn("flex flex-col gap-0.5", out ? "items-end" : "items-start")}>
+                        <span className="text-[10px] px-1 text-muted-foreground">
+                          {senderLabel}
+                        </span>
+                        {isSticker && m.media_url ? (
+                          <div className="max-w-[40%]">
+                            <img src={m.media_url} alt="sticker" className="max-h-40 object-contain" />
+                            <div className="text-[10px] opacity-60 mt-0.5 text-right">
+                              {curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          </div>
+                        ) : (
+                        <div className={cn("max-w-[75%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words shadow-sm",
+                          out ? "bg-chat-out text-chat-out-foreground rounded-br-sm"
+                              : "bg-chat-in text-chat-in-foreground border rounded-bl-sm")}>
+                          {m.media_url && m.type === "IMAGE" && (
+                            <a href={m.media_url} target="_blank" rel="noreferrer" className="block mb-1">
+                              <img src={m.media_url} alt="attachment" className="max-h-64 rounded-lg object-cover" />
+                            </a>
+                          )}
+                          {m.media_url && m.type === "VIDEO" && (
+                            <video src={m.media_url} controls className="max-h-64 rounded-lg mb-1 max-w-full" />
+                          )}
+                          {m.media_url && (m.type === "AUDIO" || m.type === "VOICE") && (
+                            <div className="flex items-center gap-2 mb-1">
+                              {m.type === "VOICE" && <Mic className="size-3.5 shrink-0 opacity-70" />}
+                              <audio src={m.media_url} controls className="max-w-full" />
+                            </div>
+                          )}
+                          {m.media_url && m.type === "DOCUMENT" && (
+                            <a href={m.media_url} target="_blank" rel="noreferrer"
+                              className="flex items-center gap-2 mb-1 px-2 py-1.5 rounded-lg bg-background/40 border border-white/20 hover:bg-background/60 text-xs">
+                              <FileText className="size-4 shrink-0" />
+                              <span className="truncate">{m.content || "Dokumen"}</span>
+                            </a>
+                          )}
+                          {(!m.media_url || m.type === "TEXT") && m.content}
+                          {m.media_url && m.type !== "TEXT" && m.content && m.content !== "(attachment)" && (
+                            <div className="mt-1">{m.content}</div>
+                          )}
+                          <div className="text-[10px] opacity-60 mt-1 text-right">
+                            {curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                           </div>
                         </div>
-                      ) : (
-                      <div className={cn("max-w-[75%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words shadow-sm",
-                        out ? "bg-chat-out text-chat-out-foreground rounded-br-sm"
-                            : "bg-chat-in text-chat-in-foreground border rounded-bl-sm")}>
-                        {m.media_url && m.type === "IMAGE" && (
-                          <a href={m.media_url} target="_blank" rel="noreferrer" className="block mb-1">
-                            <img src={m.media_url} alt="attachment" className="max-h-64 rounded-lg object-cover" />
-                          </a>
                         )}
-                        {m.media_url && m.type === "VIDEO" && (
-                          <video src={m.media_url} controls className="max-h-64 rounded-lg mb-1 max-w-full" />
-                        )}
-                        {m.media_url && (m.type === "AUDIO" || m.type === "VOICE") && (
-                          <div className="flex items-center gap-2 mb-1">
-                            {m.type === "VOICE" && <Mic className="size-3.5 shrink-0 opacity-70" />}
-                            <audio src={m.media_url} controls className="max-w-full" />
-                          </div>
-                        )}
-                        {m.media_url && m.type === "DOCUMENT" && (
-                          <a href={m.media_url} target="_blank" rel="noreferrer"
-                            className="flex items-center gap-2 mb-1 px-2 py-1.5 rounded-lg bg-background/40 border border-white/20 hover:bg-background/60 text-xs">
-                            <FileText className="size-4 shrink-0" />
-                            <span className="truncate">{m.content || "Dokumen"}</span>
-                          </a>
-                        )}
-                        {(!m.media_url || m.type === "TEXT") && m.content}
-                        {m.media_url && m.type !== "TEXT" && m.content && m.content !== "(attachment)" && (
-                          <div className="mt-1">{m.content}</div>
-                        )}
-                        <div className="text-[10px] opacity-60 mt-1 text-right">
-                          {new Date(m.sent_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                        </div>
                       </div>
-                      )}
-                    </div>
+                    </React.Fragment>
                   );
                 })}
                 {messages.length === 0 && <p className="text-center text-xs text-muted-foreground">Belum ada pesan.</p>}
+
               </div>
 
               <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="border-t p-3 bg-card space-y-2">
