@@ -1127,14 +1127,34 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   )}
                   <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePicked} />
                 </div>
-                <div className="flex gap-2">
-                  <Input value={text} onChange={(e) => setText(e.target.value)}
+                <div className="flex gap-2 items-end">
+                  <Textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    onInput={(e) => {
+                      const el = e.currentTarget;
+                      el.style.height = "auto";
+                      el.style.height = Math.min(el.scrollHeight, Math.floor(window.innerHeight * 0.5)) + "px";
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
+                      }
+                    }}
+                    rows={1}
                     placeholder={mode === "note"
                       ? "Catatan internal — hanya dilihat agent..."
                       : recording ? "Merekam voice note..." : `Balas sebagai ${agentName(user?.id || null)}...`}
                     disabled={sending || uploading || recording}
-                    className={mode === "note" ? "bg-amber-50 dark:bg-amber-500/10 border-amber-300" : ""}
-                    autoFocus />
+                    className={cn(
+                      "min-h-[40px] resize-none overflow-y-auto leading-snug",
+                      mode === "note" ? "bg-amber-50 dark:bg-amber-500/10 border-amber-300" : ""
+                    )}
+                    style={{ maxHeight: "50vh" }}
+                    autoFocus
+                  />
+
                   {mode === "reply" && (
                     recording ? (
                       <Button type="button" onClick={stopVoiceNote} className="bg-rose-500 hover:bg-rose-600 text-white">
