@@ -1040,9 +1040,24 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                           {m.media_url && m.type !== "TEXT" && m.content && m.content !== "(attachment)" && (
                             <div className="mt-1">{m.content}</div>
                           )}
-                          <div className="text-[10px] opacity-60 mt-1 text-right">
-                            {curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                          <div className="text-[10px] opacity-60 mt-1 text-right flex items-center justify-end gap-1">
+                            {out && m.status === "FAILED" && (
+                              <span className="text-rose-500 font-medium">Gagal</span>
+                            )}
+                            {out && m.status === "SENT" && <span>✓</span>}
+                            {out && m.status === "DELIVERED" && <span className="text-sky-500">✓✓</span>}
+                            <span>{curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}</span>
                           </div>
+                          {out && m.status === "FAILED" && (
+                            <div className="mt-1 text-[10px] flex items-start gap-1 text-rose-600 bg-rose-500/10 border border-rose-500/30 rounded-md px-2 py-1">
+                              <AlertTriangle className="size-3 mt-0.5 shrink-0" />
+                              <span>
+                                Belum terkirim{m.error_code ? ` (kode ${m.error_code})` : ""}.{" "}
+                                {m.error_message || "Cek nomor tujuan dan konfigurasi Twilio."}{" "}
+                                Buka <a href="/settings" className="underline">Settings → WhatsApp Gateway</a> untuk cek log.
+                              </span>
+                            </div>
+                          )}
                         </div>
                         )}
                       </div>
