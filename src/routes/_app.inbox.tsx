@@ -1069,6 +1069,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
               </div>
 
               <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="border-t p-2 md:p-3 bg-card space-y-2">
+                {/* Row 1: mode toggle + quick replies + attachments */}
                 <div className="flex items-center gap-1.5">
                   <div className="inline-flex rounded-full border bg-background p-0.5 text-[11px] shrink-0">
                     <button type="button" onClick={() => setMode("reply")}
@@ -1144,6 +1145,9 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                       </Popover>
                     </>
                   )}
+                </div>
+                {/* Row 2: textarea + VN + Send */}
+                <div className="flex items-end gap-1.5">
                   <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePicked} />
                   <Textarea
                     value={text}
