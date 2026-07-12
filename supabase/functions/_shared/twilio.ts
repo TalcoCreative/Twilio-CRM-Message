@@ -175,15 +175,23 @@ export async function twilioSendMessage(cfg: TwilioConfig, params: {
   if (params.mediaUrl) fd.append("MediaUrl", params.mediaUrl);
 
   const url = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(cfg.accountSid)}/Messages.json`;
-  const res = await fetch(url, {
+  const doFetch = (auth: string) => fetch(url, {
     method: "POST",
-    headers: {
-      Authorization: basicAuthHeader(cfg),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { Authorization: auth, "Content-Type": "application/x-www-form-urlencoded" },
     body: fd,
   });
-  const data = await res.json().catch(() => ({} as any));
+
+  let res = await doFetch(basicAuthHeader(cfg));
+  let data = await res.json().catch(() => ({} as any));
+
+  // If API Key auth failed with 20003, retry with Account SID + Auth Token
+  if ((!res.ok || data?.code === 20003) && cfg.apiKeySid && cfg.apiKeySecret && cfg.authToken) {
+    console.log(`[twilio-send] API Key auth failed (${data?.code}), retrying with Auth Token`);
+    const fallback = "Basic " + btoa(`${cfg.accountSid}:${cfg.authToken}`);
+    res = await doFetch(fallback);
+    data = await res.json().catch(() => ({} as any));
+  }
+
   console.log(`[twilio-send] status=${res.status} to=${params.to.slice(0, 4)}*** code=${data?.code || "-"}`);
   if (!res.ok || data?.code) {
     const code = data?.code ? String(data.code) : String(res.status);
@@ -195,6 +203,7 @@ export async function twilioSendMessage(cfg: TwilioConfig, params: {
     };
   }
   return { ok: true, status: res.status, sid: data?.sid, raw: data };
+
 }
 
 export function makeAdmin(): SupabaseClient {
