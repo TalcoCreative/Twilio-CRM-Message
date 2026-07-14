@@ -500,6 +500,54 @@ function FonnteTab() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="size-5" /> Outbound WhatsApp Templates
+          </CardTitle>
+          <CardDescription>
+            Content SID Twilio untuk pesan business-initiated (di luar jendela 24 jam customer service).
+            Semua notifikasi sistem akan menggunakan template ini, bukan freeform.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Agent Assignment · Content SID</Label>
+            <Input value={contentSidAssign} onChange={(e) => setContentSidAssign(e.target.value)}
+              placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
+            <p className="text-[11px] text-muted-foreground">
+              Variables: <code>{"{{1}}"}</code>=Nama Agent, <code>{"{{2}}"}</code>=Assigned By,
+              <code>{"{{3}}"}</code>=Nama Lead, <code>{"{{4}}"}</code>=Nomor WA,
+              <code>{"{{5}}"}</code>=Produk, <code>{"{{6}}"}</code>=Keluhan.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Lead Invitation · Content SID</Label>
+            <Input value={contentSidInvite} onChange={(e) => setContentSidInvite(e.target.value)}
+              placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
+            <p className="text-[11px] text-muted-foreground">
+              Variables: <code>{"{{1}}"}</code>=Nama Agent, <code>{"{{2}}"}</code>=Nama FR,
+              <code>{"{{3}}"}</code>=Nama Lead, <code>{"{{4}}"}</code>=Nomor WA,
+              <code>{"{{5}}"}</code>=Produk, <code>{"{{6}}"}</code>=Keluhan.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Lead Follow Up · Content SID</Label>
+            <Input value={contentSidFollowUp} onChange={(e) => setContentSidFollowUp(e.target.value)}
+              placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
+            <p className="text-[11px] text-muted-foreground">
+              Variables: <code>{"{{1}}"}</code>=Nama Pasien, <code>{"{{2}}"}</code>=Produk.
+              Digunakan otomatis di Inbox saat window 24 jam sudah lewat.
+            </p>
+          </div>
+          <Button onClick={saveTemplates} disabled={savingTemplates || loading}>
+            {savingTemplates && <Loader2 className="size-4 mr-2 animate-spin" />} Simpan Content SID
+          </Button>
+        </CardContent>
+      </Card>
+
+
+
+      <Card>
+        <CardHeader>
           <CardTitle className="flex items-center gap-2"><Send className="size-5" /> Test Kirim Pesan</CardTitle>
           <CardDescription>Verifikasi kirim end-to-end setelah simpan kredensial.</CardDescription>
         </CardHeader>
