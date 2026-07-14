@@ -277,6 +277,41 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const activeProductName = active?.contact?.interested_product_id
     ? products.find((p) => p.id === active.contact?.interested_product_id)?.name : null;
 
+  // Customer Service Window (24h) — computed from most recent inbound message
+  const lastInboundAt = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.direction === "INBOUND") return new Date(m.sent_at).getTime();
+    }
+    return null;
+  }, [messages]);
+  const windowClosed = activeId != null && (lastInboundAt == null || (Date.now() - lastInboundAt) > 24 * 60 * 60 * 1000);
+  const [sendingFollowUp, setSendingFollowUp] = useState(false);
+
+  async function sendFollowUp() {
+    if (!activeId) return;
+    setSendingFollowUp(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/twilio-followup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ conversation_id: activeId }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.ok) {
+        toast.error(j.twilio_message || j.error || "Gagal kirim Follow Up");
+        return;
+      }
+      toast.success("Template Follow Up terkirim");
+    } catch (e: any) {
+      toast.error(e?.message || String(e));
+    } finally {
+      setSendingFollowUp(false);
+    }
+  }
+
+
   async function sendMessage(payload?: string) {
     const content = (payload ?? text).trim();
     if (!content || !activeId) return;
