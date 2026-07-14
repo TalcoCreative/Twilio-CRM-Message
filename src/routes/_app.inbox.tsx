@@ -1234,13 +1234,13 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                       </Button>
                     ) : (
                       !text.trim() && (
-                        <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0" onClick={startVoiceNote} disabled={uploading || sending} title="Rekam voice note">
+                        <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0" onClick={startVoiceNote} disabled={uploading || sending || windowClosed} title="Rekam voice note">
                           <Mic className="size-4" />
                         </Button>
                       )
                     )
                   )}
-                  <Button type="submit" size="icon" disabled={sending || uploading || recording || !text.trim()}
+                  <Button type="submit" size="icon" disabled={sending || uploading || recording || !text.trim() || (windowClosed && mode === "reply")}
                     className={cn("h-9 w-9 shrink-0", mode === "note" ? "bg-amber-500 hover:bg-amber-600 text-white" : "")}>
                     {sending || uploading ? <Loader2 className="size-4 animate-spin" /> :
                       mode === "note" ? <StickyNote className="size-4" /> : <Send className="size-4" />}
