@@ -277,6 +277,41 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const activeProductName = active?.contact?.interested_product_id
     ? products.find((p) => p.id === active.contact?.interested_product_id)?.name : null;
 
+  // Customer Service Window (24h) — computed from most recent inbound message
+  const lastInboundAt = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.direction === "INBOUND") return new Date(m.sent_at).getTime();
+    }
+    return null;
+  }, [messages]);
+  const windowClosed = activeId != null && (lastInboundAt == null || (Date.now() - lastInboundAt) > 24 * 60 * 60 * 1000);
+  const [sendingFollowUp, setSendingFollowUp] = useState(false);
+
+  async function sendFollowUp() {
+    if (!activeId) return;
+    setSendingFollowUp(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/twilio-followup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ conversation_id: activeId }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.ok) {
+        toast.error(j.twilio_message || j.error || "Gagal kirim Follow Up");
+        return;
+      }
+      toast.success("Template Follow Up terkirim");
+    } catch (e: any) {
+      toast.error(e?.message || String(e));
+    } finally {
+      setSendingFollowUp(false);
+    }
+  }
+
+
   async function sendMessage(payload?: string) {
     const content = (payload ?? text).trim();
     if (!content || !activeId) return;
@@ -1068,7 +1103,23 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
               </div>
 
-              <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="border-t p-2 md:p-3 bg-card space-y-2">
+              <form onSubmit={(e) => { e.preventDefault(); if (!windowClosed || mode === "note") sendMessage(); }} className="border-t p-2 md:p-3 bg-card space-y-2">
+                {windowClosed && mode === "reply" && (
+                  <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-800 dark:text-amber-200">
+                    <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">Customer Service Window &gt; 24 jam</div>
+                      <div className="opacity-80">
+                        Pesan freeform tidak dapat dikirim. Gunakan tombol Follow Up untuk mengirim template Twilio yang sudah disetujui.
+                      </div>
+                    </div>
+                    <Button type="button" size="sm" onClick={sendFollowUp} disabled={sendingFollowUp}
+                      className="h-8 shrink-0 bg-amber-600 hover:bg-amber-700 text-white">
+                      {sendingFollowUp ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
+                      Follow Up
+                    </Button>
+                  </div>
+                )}
                 {/* Row 1: mode toggle + quick replies + attachments */}
                 <div className="flex items-center gap-1.5">
                   <div className="inline-flex rounded-full border bg-background p-0.5 text-[11px] shrink-0">
@@ -1091,7 +1142,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     <>
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" title="Quick Replies">
+                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" title="Quick Replies" disabled={windowClosed}>
                             <Zap className="size-4" />
                           </Button>
                         </PopoverTrigger>
@@ -1112,7 +1163,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                       </Popover>
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" disabled={uploading || recording} title="Lampiran">
+                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" disabled={uploading || recording || windowClosed} title="Lampiran">
                             <Paperclip className="size-4" />
                           </Button>
                         </PopoverTrigger>
@@ -1166,8 +1217,9 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     rows={1}
                     placeholder={mode === "note"
                       ? "Catatan internal..."
+                      : windowClosed ? "Window 24 jam sudah lewat — gunakan tombol Follow Up"
                       : recording ? "Merekam voice..." : "Ketik pesan..."}
-                    disabled={sending || uploading || recording}
+                    disabled={sending || uploading || recording || (windowClosed && mode === "reply")}
                     className={cn(
                       "min-h-[38px] resize-none overflow-y-auto leading-snug flex-1",
                       mode === "note" ? "bg-amber-50 dark:bg-amber-500/10 border-amber-300" : ""
@@ -1182,13 +1234,13 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                       </Button>
                     ) : (
                       !text.trim() && (
-                        <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0" onClick={startVoiceNote} disabled={uploading || sending} title="Rekam voice note">
+                        <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0" onClick={startVoiceNote} disabled={uploading || sending || windowClosed} title="Rekam voice note">
                           <Mic className="size-4" />
                         </Button>
                       )
                     )
                   )}
-                  <Button type="submit" size="icon" disabled={sending || uploading || recording || !text.trim()}
+                  <Button type="submit" size="icon" disabled={sending || uploading || recording || !text.trim() || (windowClosed && mode === "reply")}
                     className={cn("h-9 w-9 shrink-0", mode === "note" ? "bg-amber-500 hover:bg-amber-600 text-white" : "")}>
                     {sending || uploading ? <Loader2 className="size-4 animate-spin" /> :
                       mode === "note" ? <StickyNote className="size-4" /> : <Send className="size-4" />}

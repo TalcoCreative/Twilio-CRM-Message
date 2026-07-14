@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 // tabs replaced with custom pill nav
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, Loader2, Copy, ExternalLink, MessageCircle, Send, Power } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Copy, ExternalLink, MessageCircle, Send, Power, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -218,6 +218,10 @@ function FonnteTab() {
   const [messagingServiceSid, setMessagingServiceSid] = useState("");
   const [apiKeySid, setApiKeySid] = useState("");
   const [apiKeySecret, setApiKeySecret] = useState("");
+  const [contentSidAssign, setContentSidAssign] = useState("");
+  const [contentSidInvite, setContentSidInvite] = useState("");
+  const [contentSidFollowUp, setContentSidFollowUp] = useState("");
+  const [savingTemplates, setSavingTemplates] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -232,6 +236,8 @@ function FonnteTab() {
       .in("key", [
         "twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from",
         "twilio_messaging_service_sid", "twilio_api_key_sid", "twilio_api_key_secret",
+        "twilio_content_sid_agent_assignment", "twilio_content_sid_lead_invitation",
+        "twilio_content_sid_lead_follow_up",
       ]);
     data?.forEach((r) => {
       if (r.key === "twilio_account_sid") setAccountSid(r.value || "");
@@ -240,6 +246,9 @@ function FonnteTab() {
       if (r.key === "twilio_messaging_service_sid") setMessagingServiceSid(r.value || "");
       if (r.key === "twilio_api_key_sid") setApiKeySid(r.value || "");
       if (r.key === "twilio_api_key_secret") setApiKeySecret(r.value || "");
+      if (r.key === "twilio_content_sid_agent_assignment") setContentSidAssign(r.value || "");
+      if (r.key === "twilio_content_sid_lead_invitation") setContentSidInvite(r.value || "");
+      if (r.key === "twilio_content_sid_lead_follow_up") setContentSidFollowUp(r.value || "");
     });
     setLoading(false);
   }
@@ -328,6 +337,29 @@ function FonnteTab() {
     if (j.ok) toast.success("Pesan test terkirim! Cek WhatsApp.");
     else toast.error(j.error || JSON.stringify(j.twilio || j));
   }
+
+  async function saveTemplates() {
+    setSavingTemplates(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/twilio-settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({
+        // send existing credentials so wipe-disconnect doesn't trigger
+        account_sid: accountSid, auth_token: authToken, whatsapp_from: whatsappFrom,
+        messaging_service_sid: messagingServiceSid, api_key_sid: apiKeySid, api_key_secret: apiKeySecret,
+        content_sid_agent_assignment: contentSidAssign.trim(),
+        content_sid_lead_invitation: contentSidInvite.trim(),
+        content_sid_lead_follow_up: contentSidFollowUp.trim(),
+      }),
+    });
+    const j = await res.json();
+    setSavingTemplates(false);
+    if (res.ok && j.success) toast.success("Content SID tersimpan");
+    else toast.error(j.error || "Gagal menyimpan Content SID");
+  }
+
+
 
   const inboundUrl = `${SUPABASE_URL}/functions/v1/twilio-webhook`;
   const statusUrl = `${SUPABASE_URL}/functions/v1/twilio-status`;
@@ -465,6 +497,54 @@ function FonnteTab() {
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="size-5" /> Outbound WhatsApp Templates
+          </CardTitle>
+          <CardDescription>
+            Content SID Twilio untuk pesan business-initiated (di luar jendela 24 jam customer service).
+            Semua notifikasi sistem akan menggunakan template ini, bukan freeform.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Agent Assignment · Content SID</Label>
+            <Input value={contentSidAssign} onChange={(e) => setContentSidAssign(e.target.value)}
+              placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
+            <p className="text-[11px] text-muted-foreground">
+              Variables: <code>{"{{1}}"}</code>=Nama Agent, <code>{"{{2}}"}</code>=Assigned By,
+              <code>{"{{3}}"}</code>=Nama Lead, <code>{"{{4}}"}</code>=Nomor WA,
+              <code>{"{{5}}"}</code>=Produk, <code>{"{{6}}"}</code>=Keluhan.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Lead Invitation · Content SID</Label>
+            <Input value={contentSidInvite} onChange={(e) => setContentSidInvite(e.target.value)}
+              placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
+            <p className="text-[11px] text-muted-foreground">
+              Variables: <code>{"{{1}}"}</code>=Nama Agent, <code>{"{{2}}"}</code>=Nama FR,
+              <code>{"{{3}}"}</code>=Nama Lead, <code>{"{{4}}"}</code>=Nomor WA,
+              <code>{"{{5}}"}</code>=Produk, <code>{"{{6}}"}</code>=Keluhan.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Lead Follow Up · Content SID</Label>
+            <Input value={contentSidFollowUp} onChange={(e) => setContentSidFollowUp(e.target.value)}
+              placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
+            <p className="text-[11px] text-muted-foreground">
+              Variables: <code>{"{{1}}"}</code>=Nama Pasien, <code>{"{{2}}"}</code>=Produk.
+              Digunakan otomatis di Inbox saat window 24 jam sudah lewat.
+            </p>
+          </div>
+          <Button onClick={saveTemplates} disabled={savingTemplates || loading}>
+            {savingTemplates && <Loader2 className="size-4 mr-2 animate-spin" />} Simpan Content SID
+          </Button>
+        </CardContent>
+      </Card>
+
+
 
       <Card>
         <CardHeader>

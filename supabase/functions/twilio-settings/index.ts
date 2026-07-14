@@ -34,8 +34,16 @@ Deno.serve(async (req) => {
     const api_key_sid = String(body.api_key_sid || "").trim();
     const api_key_secret = String(body.api_key_secret || "").trim();
 
-    // Disconnect: all empty → wipe settings
-    if (!account_sid && !auth_token && !whatsapp_from && !messaging_service_sid && !api_key_sid && !api_key_secret) {
+    // Content SIDs for outbound templates (optional; only touched when key exists in body)
+    const contentSidKeys: Record<string, string> = {
+      content_sid_agent_assignment: "twilio_content_sid_agent_assignment",
+      content_sid_lead_invitation: "twilio_content_sid_lead_invitation",
+      content_sid_lead_follow_up: "twilio_content_sid_lead_follow_up",
+    };
+
+    // Disconnect: all credentials empty AND no content sid fields → wipe settings
+    const contentTouched = Object.keys(contentSidKeys).some((k) => k in body);
+    if (!account_sid && !auth_token && !whatsapp_from && !messaging_service_sid && !api_key_sid && !api_key_secret && !contentTouched) {
       await admin.from("system_settings").delete().in("key", [
         "twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from",
         "twilio_messaging_service_sid", "twilio_api_key_sid", "twilio_api_key_secret",
@@ -76,6 +84,19 @@ Deno.serve(async (req) => {
       const { error } = await admin.from("system_settings")
         .upsert({ key: r.key, value: r.value, updated_by: u.user.id, updated_at: now }, { onConflict: "key" });
       if (error) return jsonResponse({ success: false, error: `Save ${r.key} failed: ${error.message}` }, 500);
+    }
+
+    // Handle content SIDs: upsert when non-empty, delete when explicitly empty
+    for (const [inKey, dbKey] of Object.entries(contentSidKeys)) {
+      if (!(inKey in body)) continue;
+      const v = String((body as any)[inKey] || "").trim();
+      if (v) {
+        const { error } = await admin.from("system_settings")
+          .upsert({ key: dbKey, value: v, updated_by: u.user.id, updated_at: now }, { onConflict: "key" });
+        if (error) return jsonResponse({ success: false, error: `Save ${dbKey} failed: ${error.message}` }, 500);
+      } else {
+        await admin.from("system_settings").delete().eq("key", dbKey);
+      }
     }
 
     return jsonResponse({

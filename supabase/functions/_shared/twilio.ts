@@ -159,6 +159,86 @@ export type SendResult = {
   raw?: any;
 };
 
+export type ContentSids = {
+  agent_assignment: string;
+  lead_invitation: string;
+  lead_follow_up: string;
+};
+
+export async function loadContentSids(admin: SupabaseClient): Promise<ContentSids> {
+  const { data } = await admin.from("system_settings").select("key,value").in("key", [
+    "twilio_content_sid_agent_assignment",
+    "twilio_content_sid_lead_invitation",
+    "twilio_content_sid_lead_follow_up",
+  ]);
+  const m: Record<string, string> = {};
+  (data || []).forEach((r: any) => { m[r.key] = r.value; });
+  return {
+    agent_assignment: m.twilio_content_sid_agent_assignment || "",
+    lead_invitation: m.twilio_content_sid_lead_invitation || "",
+    lead_follow_up: m.twilio_content_sid_lead_follow_up || "",
+  };
+}
+
+export function normalizeContentVars(vars: Record<string | number, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  Object.keys(vars).forEach((k) => {
+    const v = vars[k];
+    const s = v === null || v === undefined || String(v).trim() === "" ? "-" : String(v).trim();
+    out[String(k)] = s;
+  });
+  return out;
+}
+
+export async function twilioSendContentTemplate(cfg: TwilioConfig, params: {
+  to: string;
+  contentSid: string;
+  contentVariables: Record<string, string>;
+  statusCallback?: string;
+}): Promise<SendResult> {
+  const err = validateConfig(cfg, { requireFrom: true });
+  if (err) return { ok: false, status: 500, errorMessage: err };
+  if (!params.contentSid) {
+    return { ok: false, status: 400, errorMessage: "Content SID belum dikonfigurasi pada WhatsApp Gateway." };
+  }
+
+  const fd = new URLSearchParams();
+  fd.append("To", toWhatsapp(params.to));
+  if (cfg.messagingServiceSid) fd.append("MessagingServiceSid", cfg.messagingServiceSid);
+  else fd.append("From", toWhatsapp(cfg.whatsappFrom!));
+  fd.append("ContentSid", params.contentSid);
+  fd.append("ContentVariables", JSON.stringify(params.contentVariables));
+  if (params.statusCallback) fd.append("StatusCallback", params.statusCallback);
+
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(cfg.accountSid)}/Messages.json`;
+  const doFetch = (auth: string) => fetch(url, {
+    method: "POST",
+    headers: { Authorization: auth, "Content-Type": "application/x-www-form-urlencoded" },
+    body: fd,
+  });
+
+  let res = await doFetch(basicAuthHeader(cfg));
+  let data = await res.json().catch(() => ({} as any));
+
+  if ((!res.ok || data?.code === 20003) && cfg.apiKeySid && cfg.apiKeySecret && cfg.authToken) {
+    console.log(`[twilio-template] API Key auth failed (${data?.code}), retrying with Auth Token`);
+    res = await doFetch("Basic " + btoa(`${cfg.accountSid}:${cfg.authToken}`));
+    data = await res.json().catch(() => ({} as any));
+  }
+
+  console.log(`[twilio-template] status=${res.status} sid=${params.contentSid} to=${params.to.slice(0, 4)}*** code=${data?.code || "-"}`);
+  if (!res.ok || data?.code) {
+    const code = data?.code ? String(data.code) : String(res.status);
+    return {
+      ok: false, status: res.status,
+      errorCode: code,
+      errorMessage: data?.message || TWILIO_ERROR_CODES[code] || `HTTP ${res.status}`,
+      raw: data,
+    };
+  }
+  return { ok: true, status: res.status, sid: data?.sid, raw: data };
+}
+
 export async function twilioSendMessage(cfg: TwilioConfig, params: {
   to: string;
   body?: string;
