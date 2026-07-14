@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 // tabs replaced with custom pill nav
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, Loader2, Copy, ExternalLink, MessageCircle, Send, Power } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Copy, ExternalLink, MessageCircle, Send, Power, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
