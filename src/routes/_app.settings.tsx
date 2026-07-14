@@ -338,6 +338,26 @@ function FonnteTab() {
     else toast.error(j.error || JSON.stringify(j.twilio || j));
   }
 
+  async function saveTemplates() {
+    setSavingTemplates(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/twilio-settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({
+        // send existing credentials so wipe-disconnect doesn't trigger
+        account_sid: accountSid, auth_token: authToken, whatsapp_from: whatsappFrom,
+        messaging_service_sid: messagingServiceSid, api_key_sid: apiKeySid, api_key_secret: apiKeySecret,
+        content_sid_agent_assignment: contentSidAssign.trim(),
+        content_sid_lead_invitation: contentSidInvite.trim(),
+        content_sid_lead_follow_up: contentSidFollowUp.trim(),
+      }),
+    });
+    const j = await res.json();
+    setSavingTemplates(false);
+    if (res.ok && j.success) toast.success("Content SID tersimpan");
+    else toast.error(j.error || "Gagal menyimpan Content SID");
+
   const inboundUrl = `${SUPABASE_URL}/functions/v1/twilio-webhook`;
   const statusUrl = `${SUPABASE_URL}/functions/v1/twilio-status`;
 
