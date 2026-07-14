@@ -1217,8 +1217,9 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     rows={1}
                     placeholder={mode === "note"
                       ? "Catatan internal..."
+                      : windowClosed ? "Window 24 jam sudah lewat — gunakan tombol Follow Up"
                       : recording ? "Merekam voice..." : "Ketik pesan..."}
-                    disabled={sending || uploading || recording}
+                    disabled={sending || uploading || recording || (windowClosed && mode === "reply")}
                     className={cn(
                       "min-h-[38px] resize-none overflow-y-auto leading-snug flex-1",
                       mode === "note" ? "bg-amber-50 dark:bg-amber-500/10 border-amber-300" : ""
