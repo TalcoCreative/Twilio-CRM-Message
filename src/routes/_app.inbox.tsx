@@ -1103,7 +1103,23 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
               </div>
 
-              <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="border-t p-2 md:p-3 bg-card space-y-2">
+              <form onSubmit={(e) => { e.preventDefault(); if (!windowClosed || mode === "note") sendMessage(); }} className="border-t p-2 md:p-3 bg-card space-y-2">
+                {windowClosed && mode === "reply" && (
+                  <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-800 dark:text-amber-200">
+                    <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">Customer Service Window &gt; 24 jam</div>
+                      <div className="opacity-80">
+                        Pesan freeform tidak dapat dikirim. Gunakan tombol Follow Up untuk mengirim template Twilio yang sudah disetujui.
+                      </div>
+                    </div>
+                    <Button type="button" size="sm" onClick={sendFollowUp} disabled={sendingFollowUp}
+                      className="h-8 shrink-0 bg-amber-600 hover:bg-amber-700 text-white">
+                      {sendingFollowUp ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
+                      Follow Up
+                    </Button>
+                  </div>
+                )}
                 {/* Row 1: mode toggle + quick replies + attachments */}
                 <div className="flex items-center gap-1.5">
                   <div className="inline-flex rounded-full border bg-background p-0.5 text-[11px] shrink-0">
