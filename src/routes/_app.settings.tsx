@@ -236,6 +236,8 @@ function FonnteTab() {
       .in("key", [
         "twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from",
         "twilio_messaging_service_sid", "twilio_api_key_sid", "twilio_api_key_secret",
+        "twilio_content_sid_agent_assignment", "twilio_content_sid_lead_invitation",
+        "twilio_content_sid_lead_follow_up",
       ]);
     data?.forEach((r) => {
       if (r.key === "twilio_account_sid") setAccountSid(r.value || "");
@@ -244,6 +246,9 @@ function FonnteTab() {
       if (r.key === "twilio_messaging_service_sid") setMessagingServiceSid(r.value || "");
       if (r.key === "twilio_api_key_sid") setApiKeySid(r.value || "");
       if (r.key === "twilio_api_key_secret") setApiKeySecret(r.value || "");
+      if (r.key === "twilio_content_sid_agent_assignment") setContentSidAssign(r.value || "");
+      if (r.key === "twilio_content_sid_lead_invitation") setContentSidInvite(r.value || "");
+      if (r.key === "twilio_content_sid_lead_follow_up") setContentSidFollowUp(r.value || "");
     });
     setLoading(false);
   }
