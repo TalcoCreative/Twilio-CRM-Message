@@ -1163,7 +1163,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                       </Popover>
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" disabled={uploading || recording} title="Lampiran">
+                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" disabled={uploading || recording || windowClosed} title="Lampiran">
                             <Paperclip className="size-4" />
                           </Button>
                         </PopoverTrigger>
