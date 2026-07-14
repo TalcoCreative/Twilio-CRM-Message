@@ -218,6 +218,10 @@ function FonnteTab() {
   const [messagingServiceSid, setMessagingServiceSid] = useState("");
   const [apiKeySid, setApiKeySid] = useState("");
   const [apiKeySecret, setApiKeySecret] = useState("");
+  const [contentSidAssign, setContentSidAssign] = useState("");
+  const [contentSidInvite, setContentSidInvite] = useState("");
+  const [contentSidFollowUp, setContentSidFollowUp] = useState("");
+  const [savingTemplates, setSavingTemplates] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
