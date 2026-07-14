@@ -1142,7 +1142,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     <>
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" title="Quick Replies">
+                          <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" title="Quick Replies" disabled={windowClosed}>
                             <Zap className="size-4" />
                           </Button>
                         </PopoverTrigger>
