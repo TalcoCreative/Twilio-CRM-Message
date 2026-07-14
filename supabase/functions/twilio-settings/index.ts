@@ -86,6 +86,19 @@ Deno.serve(async (req) => {
       if (error) return jsonResponse({ success: false, error: `Save ${r.key} failed: ${error.message}` }, 500);
     }
 
+    // Handle content SIDs: upsert when non-empty, delete when explicitly empty
+    for (const [inKey, dbKey] of Object.entries(contentSidKeys)) {
+      if (!(inKey in body)) continue;
+      const v = String((body as any)[inKey] || "").trim();
+      if (v) {
+        const { error } = await admin.from("system_settings")
+          .upsert({ key: dbKey, value: v, updated_by: u.user.id, updated_at: now }, { onConflict: "key" });
+        if (error) return jsonResponse({ success: false, error: `Save ${dbKey} failed: ${error.message}` }, 500);
+      } else {
+        await admin.from("system_settings").delete().eq("key", dbKey);
+      }
+    }
+
     return jsonResponse({
       success: true, ok: true,
       validate_ok: validateOk,
