@@ -1527,7 +1527,7 @@ function StatCard({ icon: Icon, label, value }: { icon: any; label: string; valu
   );
 }
 
-function KPI({ icon: Icon, label, value, color }: any) {
+function KPI({ icon: Icon, label, value, color, hint }: any) {
   return (
     <Card className="glow-soft">
       <CardContent className="p-4">
@@ -1536,6 +1536,7 @@ function KPI({ icon: Icon, label, value, color }: any) {
           <Icon className={`size-4 ${color}`} />
         </div>
         <div className="text-xl md:text-2xl font-bold">{value}</div>
+        {hint && <div className="text-[10px] text-muted-foreground mt-1 leading-snug">{hint}</div>}
       </CardContent>
     </Card>
   );
