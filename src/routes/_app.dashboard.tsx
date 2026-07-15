@@ -197,32 +197,99 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
 
   useEffect(() => {
     (async () => {
-      const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs] = await Promise.all([
-        supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, created_at, stages(name, color)"),
-        supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview", { count: "exact" }).eq("status", "OPEN"),
-        supabase.from("messages").select("sent_at, direction, sent_by_id").gte("sent_at", startISO).lte("sent_at", endISO),
-        supabase.from("messages").select("sent_by_id, response_seconds, sent_at")
+      const startDate = new Date(startISO).toISOString().slice(0, 10);
+      const endDate = new Date(endISO).toISOString().slice(0, 10);
+      const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes] = await Promise.all([
+        supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, assigned_agent_id, created_at, stages(name, color)"),
+        supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN"),
+        supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO),
+        supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
           .gte("sent_at", startISO).lte("sent_at", endISO).eq("direction", "OUTBOUND").not("response_seconds", "is", null),
         supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
           .eq("action", "change_stage").gte("created_at", startISO).lte("created_at", endISO).order("created_at", { ascending: true }),
-        supabase.from("conversations").select("id, contact_id, created_at"),
+        supabase.from("conversations").select("id, contact_id, assigned_agent_id, created_at"),
         supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
           .eq("action", "assign_agent").gte("created_at", startISO).lte("created_at", endISO),
+        supabase.from("agent_shifts").select("agent_id, shifts(start_time, end_time, days_of_week, is_active)"),
+        supabase.from("fr_date_shifts" as any).select("agent_id, work_date, start_time, end_time")
+          .gte("work_date", startDate).lte("work_date", endDate),
       ]);
 
-      // SCOPED responses
+      const allContacts = (contacts.data || []) as any[];
+      const openConvsAll = (openConv.data || []) as any[];
+      const allConvsAll = (allConvs.data || []) as any[];
+
+      // Peta conversation -> agent yang di-assign (semua conversation).
+      const convAgent: Record<string, string | null> = {};
+      allConvsAll.forEach((c: any) => { convAgent[c.id] = c.assigned_agent_id; });
+      openConvsAll.forEach((c: any) => { convAgent[c.id] = c.assigned_agent_id; });
+
+      // ==== Bangun window shift per agent (agent_shifts + fr_date_shifts) ====
+      const startMs = new Date(startISO).getTime();
+      const endMs = new Date(endISO).getTime();
+      const shiftIntervals: Record<string, Array<[number, number]>> = {};
+      const addInt = (aid: string, s: number, e: number) => {
+        if (e <= s) return;
+        const cs = Math.max(s, startMs), ce = Math.min(e, endMs);
+        if (ce <= cs) return;
+        (shiftIntervals[aid] ||= []).push([cs, ce]);
+      };
+      const days: Date[] = [];
+      const dCursor = new Date(startISO); dCursor.setHours(0, 0, 0, 0);
+      while (dCursor.getTime() <= endMs) {
+        days.push(new Date(dCursor));
+        dCursor.setDate(dCursor.getDate() + 1);
+      }
+      ((agentShiftsRes.data as any[]) || []).forEach((row: any) => {
+        const sh = row.shifts;
+        if (!sh || !sh.is_active) return;
+        const [sh_h, sh_m] = String(sh.start_time).split(":").map(Number);
+        const [eh, em] = String(sh.end_time).split(":").map(Number);
+        const dows: number[] = sh.days_of_week || [];
+        days.forEach((d) => {
+          if (!dows.includes(d.getDay())) return;
+          const ds = new Date(d); ds.setHours(sh_h, sh_m, 0, 0);
+          const de = new Date(d); de.setHours(eh, em, 0, 0);
+          if (de.getTime() <= ds.getTime()) de.setDate(de.getDate() + 1);
+          addInt(row.agent_id, ds.getTime(), de.getTime());
+        });
+      });
+      ((frShRes.data as any[]) || []).forEach((row: any) => {
+        const [sh, sm] = String(row.start_time).split(":").map(Number);
+        const [eh, em] = String(row.end_time).split(":").map(Number);
+        const base = new Date(row.work_date + "T00:00:00");
+        const ds = new Date(base); ds.setHours(sh, sm, 0, 0);
+        const de = new Date(base); de.setHours(eh, em, 0, 0);
+        if (de.getTime() <= ds.getTime()) de.setDate(de.getDate() + 1);
+        addInt(row.agent_id, ds.getTime(), de.getTime());
+      });
+      const inShift = (aid: string, ts: number) => {
+        const arr = shiftIntervals[aid];
+        if (!arr) return false;
+        for (const [s, e] of arr) if (ts >= s && ts <= e) return true;
+        return false;
+      };
+
+      // ==== Response messages ====
       const allRespRaw = (respMsgs.data || []) as any[];
-      const allResp = scopeIds ? allRespRaw.filter((m) => m.sent_by_id && scopeIds.has(m.sent_by_id)) : allRespRaw;
-      const teamAvg = allResp.length ? Math.round(allResp.reduce((s, m) => s + (m.response_seconds || 0), 0) / allResp.length) : 0;
+      // Scope filter (agent/divisi) untuk kartu "Avg Respon".
+      const scopedResp = scopeIds ? allRespRaw.filter((m) => m.sent_by_id && scopeIds.has(m.sent_by_id)) : allRespRaw;
+      const teamAvg = scopedResp.length ? Math.round(scopedResp.reduce((s, m) => s + (m.response_seconds || 0), 0) / scopedResp.length) : 0;
 
-      // Hour distribution
+      // Filter ketat untuk chart per-agent:
+      //  (1) pesan dari agent, (2) conversation-nya di-assign ke agent itu,
+      //  (3) waktu kirim jatuh di dalam window shift agent tsb.
+      const strictResp = scopedResp.filter((m: any) => {
+        if (!m.sent_by_id || !m.conversation_id) return false;
+        if (convAgent[m.conversation_id] !== m.sent_by_id) return false;
+        return inShift(m.sent_by_id, new Date(m.sent_at).getTime());
+      });
+
       const buckets = HOUR_BUCKETS.map((b) => ({ label: b.label, count: 0 }));
-      allResp.forEach((m) => { buckets[bucketIdx(m.response_seconds || 0)].count++; });
+      strictResp.forEach((m: any) => { buckets[bucketIdx(m.response_seconds || 0)].count++; });
 
-      // per-agent (with scope filter)
       const perAgent: Record<string, { count: number; total: number; buckets: number[] }> = {};
-      allResp.forEach((m) => {
-        if (!m.sent_by_id) return;
+      strictResp.forEach((m: any) => {
         perAgent[m.sent_by_id] = perAgent[m.sent_by_id] || { count: 0, total: 0, buckets: HOUR_BUCKETS.map(() => 0) };
         perAgent[m.sent_by_id].count++;
         perAgent[m.sent_by_id].total += m.response_seconds || 0;
@@ -237,6 +304,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
           id, name: p?.full_name || p?.email?.split("@")[0] || "Agent",
           division: p?.position || "—",
           avg: Math.round(v.total / v.count),
+          avgMin: +(v.total / v.count / 60).toFixed(1),
           avgHours: +(v.total / v.count / 3600).toFixed(2),
           count: v.count,
         };
@@ -244,19 +312,14 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         return rec;
       }).sort((a, b) => a.avg - b.avg);
 
-      // Scope contacts: bila filter aktif, hanya contact yg assigned ke agent dlm scope
-      // ATAU punya conversation yg assigned ke agent dlm scope.
-      const allContacts = (contacts.data || []) as any[];
-      const openConvsAll = (openConv.data || []) as any[];
+      // Stage distribution & revenue — di-scope oleh filter (untuk konteks divisi/agent).
       const scopedContactIds: Set<string> | null = scopeIds ? new Set<string>() : null;
       if (scopedContactIds) {
         allContacts.forEach((c: any) => { if (c.assigned_agent_id && scopeIds!.has(c.assigned_agent_id)) scopedContactIds.add(c.id); });
         openConvsAll.forEach((c: any) => { if (c.assigned_agent_id && scopeIds!.has(c.assigned_agent_id)) scopedContactIds.add(c.contact_id); });
       }
       const scopedContacts = scopedContactIds ? allContacts.filter((c) => scopedContactIds.has(c.id)) : allContacts;
-      const scopedOpenConv = scopedContactIds ? openConvsAll.filter((c) => scopedContactIds.has(c.contact_id)) : openConvsAll;
 
-      // Stage distribution & revenue (scoped)
       const byStage: Record<string, { name: string; color: string; count: number }> = {};
       let totalRevenue = 0;
       scopedContacts.forEach((r: any) => {
@@ -269,12 +332,9 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       const stageDist = Object.values(byStage).sort((a, b) => b.count - a.count);
       const topStage = stageDist[0];
 
-      const msgsScoped = scopeIds
-        ? (msgsList.data || []).filter((m: any) => m.direction === "INBOUND" || (m.sent_by_id && scopeIds.has(m.sent_by_id)))
-        : (msgsList.data || []);
-
+      // Volume Pesan Harian: seluruh bubble (tidak di-scope).
       const dayMap: Record<string, { date: string; in: number; out: number }> = {};
-      msgsScoped.forEach((m: any) => {
+      (msgsList.data || []).forEach((m: any) => {
         const d = new Date(m.sent_at).toISOString().slice(0, 10);
         dayMap[d] = dayMap[d] || { date: d, in: 0, out: 0 };
         if (m.direction === "INBOUND") dayMap[d].in++; else dayMap[d].out++;
@@ -282,11 +342,11 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       const dailySeries = Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date))
         .map((d) => ({ ...d, label: d.date.slice(5) }));
 
-      // Stage transitions (global)
+      // Stage transitions
       const convToContact: Record<string, string> = {};
-      (allConvs.data || []).forEach((c: any) => { convToContact[c.id] = c.contact_id; });
+      allConvsAll.forEach((c: any) => { convToContact[c.id] = c.contact_id; });
       const contactCreated: Record<string, string> = {};
-      (contacts.data || []).forEach((c: any) => { contactCreated[c.id] = c.created_at; });
+      allContacts.forEach((c: any) => { contactCreated[c.id] = c.created_at; });
 
       const perContactLogs: Record<string, any[]> = {};
       (stageLogs.data || []).forEach((l: any) => {
@@ -326,11 +386,8 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       })).sort((a, b) => b.count - a.count);
 
       const myInbox = openConvsAll.filter((c: any) => c.assigned_agent_id === user?.id).length;
-      const { data: myConvs } = await supabase.from("conversations").select("contact_id").eq("assigned_agent_id", user?.id || "00000000-0000-0000-0000-000000000000");
-      const myLeadIds = new Set((myConvs || []).map((c: any) => c.contact_id));
-      const myLeadCount = allContacts.filter((c: any) => myLeadIds.has(c.id)).length;
 
-      // Leads per agent (historical vs current) — scoped
+      // Leads per agent
       const contactMap: Record<string, any> = {};
       allContacts.forEach((c: any) => { contactMap[c.id] = c; });
 
@@ -377,11 +434,11 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         .sort((a, b) => b.currentCount - a.currentCount || b.historicalUnique - a.historicalUnique);
 
       setData({
-        totalContacts: scopedContacts.length,
-        openConv: scopedOpenConv.length,
-        messagesRange: msgsScoped.length,
+        totalContacts: allContacts.length,               // Total Leads = seluruh /leads
+        openConv: openConvsAll.length,                   // Percakapan Aktif = seluruh open
+        messagesRange: (msgsList.data || []).length,     // Pesan = seluruh bubble di rentang
         teamAvg, agentStats, stageDist, topStage, totalRevenue,
-        myInbox, myLeads: myLeadCount, dailySeries, transitions,
+        myInbox, dailySeries, transitions,
         agentLeadStats, contactMap, buckets,
       });
     })();
