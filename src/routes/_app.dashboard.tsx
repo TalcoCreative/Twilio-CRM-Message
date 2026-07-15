@@ -24,6 +24,11 @@ export const Route = createFileRoute("/_app/dashboard")({
   component: DashboardGate,
 });
 
+// Bucket key pakai local time (WIB di sandbox/browser user), bukan UTC,
+// supaya konsisten dgn range startISO/endISO yang dihitung dari local midnight.
+const localDateKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 function DashboardGate() {
   const { isFirstResponse, loading } = useRole();
   const router = useRouter();
@@ -209,8 +214,8 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
 
   useEffect(() => {
     (async () => {
-      const startDate = new Date(startISO).toISOString().slice(0, 10);
-      const endDate = new Date(endISO).toISOString().slice(0, 10);
+      const startDate = localDateKey(new Date(startISO));
+      const endDate = localDateKey(new Date(endISO));
       const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes] = await Promise.all([
         supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, assigned_agent_id, created_at, stages(name, color)"),
         supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN"),
@@ -347,7 +352,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       // Volume Pesan Harian: seluruh bubble (tidak di-scope).
       const dayMap: Record<string, { date: string; in: number; out: number }> = {};
       (msgsList.data || []).forEach((m: any) => {
-        const d = new Date(m.sent_at).toISOString().slice(0, 10);
+        const d = localDateKey(new Date(m.sent_at));
         dayMap[d] = dayMap[d] || { date: d, in: 0, out: 0 };
         if (m.direction === "INBOUND") dayMap[d].in++; else dayMap[d].out++;
       });
@@ -950,17 +955,18 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const days: Record<string, { date: string; leads: number; responded: number }> = {};
       const dStart = new Date(startISO); const dEnd = new Date(endISO);
       for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
-        const key = d.toISOString().slice(0, 10);
-        days[key] = { date: key.slice(5), leads: 0, responded: 0 };
+        const key = localDateKey(d);
+        const label = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        days[key] = { date: label, leads: 0, responded: 0 };
       }
       createdInRange.forEach((e) => {
-        const key = e.occurred_at.slice(0, 10);
+        const key = localDateKey(new Date(e.occurred_at));
         if (!days[key]) return;
         if (selectedAgent && firstFRActor[e.contact_id] !== selectedAgent) return;
         days[key].leads++;
       });
       scopedFR.forEach((r) => {
-        const key = r.at.slice(0, 10);
+        const key = localDateKey(new Date(r.at));
         if (days[key]) days[key].responded++;
       });
       const trend = Object.values(days);
