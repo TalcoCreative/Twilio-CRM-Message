@@ -1051,6 +1051,22 @@ function WorkflowTab() {
     load();
   }
 
+  async function setWon(id: string) {
+    // Hanya 1 stage boleh jadi Won — unset dulu semua, lalu set target.
+    const { error: eClear } = await supabase.from("stages").update({ is_won: false })
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+    if (eClear) return toast.error(eClear.message);
+    const { error } = await supabase.from("stages").update({ is_won: true }).eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Stage Won diperbarui");
+    load();
+  }
+
+  async function unsetWon(id: string) {
+    const { error } = await supabase.from("stages").update({ is_won: false }).eq("id", id);
+    if (error) toast.error(error.message); else { toast.success("Won dilepas"); load(); }
+  }
+
   return (
     <div className="space-y-4 mt-4">
       <Card>
