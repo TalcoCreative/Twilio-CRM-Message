@@ -1069,29 +1069,44 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
   return (
     <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPI icon={MessageCircle} label="Total First Response" value={data.totalFirst} color="text-emerald-500" />
-        <KPI icon={ArrowRightLeft} label="Continue Conversation" value={data.totalContinue} color="text-amber-500" />
-        <KPI icon={CheckCircle2} label="Total Closing" value={data.totalClosing} color="text-primary" />
-        <KPI icon={Trophy} label="Closing Share" value={data.totalShare} color="text-fuchsia-500" />
-        <KPI icon={Timer} label="Avg First Response" value={fmtTime(data.avgFirstRespSec)} color="text-emerald-500" />
-        <KPI icon={Clock} label="Avg Handle Time" value={fmtTime(data.avgHandle)} color="text-blue-500" />
+        <KPI icon={MessageCircle} label="Total First Response" value={data.totalFirst} color="text-emerald-500"
+          hint="Jumlah lead baru yang pertama kali dijawab oleh agent FR." />
+        <KPI icon={ArrowRightLeft} label="Continue Conversation" value={data.totalContinue} color="text-amber-500"
+          hint="Berapa kali agent FR melanjutkan chat yang sebelumnya dipegang FR lain." />
+        <KPI icon={CheckCircle2} label="Total Closing" value={data.totalClosing} color="text-primary"
+          hint="Jumlah invitation yang dikirim FR & diterima agent non-FR (dihitung untuk pengirim invitation)." />
+        <KPI icon={Trophy} label="Closing Share" value={data.totalShare} color="text-fuchsia-500"
+          hint="Porsi closing yang dibagi rata jika >1 FR menangani lead sebelum invitation. Solo handler tidak dapat share." />
+        <KPI icon={Timer} label="Avg First Response" value={fmtTime(data.avgFirstRespSec)} color="text-emerald-500"
+          hint="Rata-rata waktu dari lead masuk sampai balasan pertama FR." />
+        <KPI icon={Clock} label="Avg Handle Time" value={fmtTime(data.avgHandle)} color="text-blue-500"
+          hint="Rata-rata durasi FR menangani lead sampai closing (invitation diterima)." />
         {!selectedAgent && (
-          <KPI icon={MessageCircle} label="Leads Baru" value={data.newLeads} color="text-blue-500" />
+          <KPI icon={MessageCircle} label="Leads Baru" value={data.newLeads} color="text-blue-500"
+            hint="Jumlah kontak baru yang masuk pada rentang tanggal terpilih." />
         )}
-        <KPI icon={UserCheck} label="Sudah Dijawab" value={data.answered} color="text-emerald-500" />
+        <KPI icon={UserCheck} label="Sudah Dijawab" value={data.answered} color="text-emerald-500"
+          hint="Jumlah unik lead yang setidaknya sudah dibalas 1x oleh FR." />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <KPI icon={Timer} label="Avg Respon" value={fmtTime(data.avgSec)} color="text-primary" />
-        <KPI icon={AlertTriangle} label="Belum Dijawab" value={data.unresponded} color="text-rose-500" />
-        <KPI icon={Zap} label="SLA Hijau %" value={`${data.slaPct}%`} color="text-emerald-500" />
+        <KPI icon={Timer} label="Avg Respon" value={fmtTime(data.avgSec)} color="text-primary"
+          hint="Rata-rata waktu balas FR untuk setiap pesan masuk (bukan hanya yang pertama)." />
+        <KPI icon={AlertTriangle} label="Belum Dijawab" value={data.unresponded} color="text-rose-500"
+          hint="Percakapan dengan pesan masuk yang belum dibaca / dibalas." />
+        <KPI icon={Zap} label="SLA Hijau %" value={`${data.slaPct}%`} color="text-emerald-500"
+          hint={`Persentase first response yang dijawab ≤ ${slaGreen} menit.`} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPI icon={ArrowRightLeft} label="Invitation Dikirim" value={data.invSentTotal} color="text-primary" />
-        <KPI icon={CheckCircle2} label="Diterima (non-FR)" value={data.invAcceptedNonFR} color="text-emerald-500" />
-        <KPI icon={AlertTriangle} label="Ditolak" value={data.invRejected} color="text-rose-500" />
-        <KPI icon={Clock} label="Pending" value={data.invPending} color="text-amber-500" />
+        <KPI icon={ArrowRightLeft} label="Invitation Dikirim" value={data.invSentTotal} color="text-primary"
+          hint="Total invitation yang dikirim FR untuk mengoper lead ke agent lain." />
+        <KPI icon={CheckCircle2} label="Diterima (non-FR)" value={data.invAcceptedNonFR} color="text-emerald-500"
+          hint="Invitation yang diterima oleh agent di luar divisi First Response — dihitung sebagai closing." />
+        <KPI icon={AlertTriangle} label="Ditolak" value={data.invRejected} color="text-rose-500"
+          hint="Invitation yang ditolak oleh agent tujuan." />
+        <KPI icon={Clock} label="Pending" value={data.invPending} color="text-amber-500"
+          hint="Invitation yang masih menunggu respon dari agent tujuan." />
       </div>
 
 
