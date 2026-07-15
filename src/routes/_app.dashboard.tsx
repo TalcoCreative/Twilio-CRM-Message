@@ -696,7 +696,6 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
                   <thead className="text-muted-foreground">
                     <tr className="border-b">
                       <th className="text-left py-2">Agent</th>
-                      <th className="text-left">Divisi</th>
                       <th className="text-right">Historis</th>
                       <th className="text-right">Saat ini</th>
                     </tr>
@@ -705,7 +704,6 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
                     {data.agentLeadStats.map((a: any) => (
                       <tr key={a.id} className="border-b hover:bg-accent/40 cursor-pointer" onClick={() => setSelectedAgent(a)}>
                         <td className="py-2 pr-2 font-medium">{a.name}</td>
-                        <td className="text-xs text-muted-foreground">{a.division}</td>
                         <td className="text-right tabular-nums">{a.historicalUnique}</td>
                         <td className="text-right tabular-nums"><Badge variant="secondary">{a.currentCount}</Badge></td>
                       </tr>
