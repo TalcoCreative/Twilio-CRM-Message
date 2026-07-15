@@ -752,7 +752,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
   useEffect(() => {
     (async () => {
-      const [evRes, invRes, convRes, ctRes] = await Promise.all([
+      const [evRes, invRes, invSentRes, convRes, ctRes] = await Promise.all([
         supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, conversation_id, occurred_at, new_value, old_value")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)
@@ -761,12 +761,16 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           .select("id, from_user_id, to_user_id, contact_id, conversation_id, status, responded_at, created_at")
           .eq("status", "accepted")
           .gte("responded_at", startISO).lte("responded_at", endISO),
+        supabase.from("assignment_invitations")
+          .select("id, from_user_id, to_user_id, status, created_at")
+          .gte("created_at", startISO).lte("created_at", endISO),
         supabase.from("conversations")
           .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id"),
         supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id"),
       ]);
       const evs = (evRes.data || []) as any[];
       const invs = (invRes.data || []) as any[];
+      const invSent = (invSentRes.data || []) as any[];
       const convs = (convRes.data || []) as any[];
       const contactById: Record<string, any> = {};
       (ctRes.data || []).forEach((c: any) => { contactById[c.id] = c; });
