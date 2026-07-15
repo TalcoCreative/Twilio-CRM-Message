@@ -101,6 +101,9 @@ function Dashboard() {
     if (agentId !== "all" && !agentOptions.find((p) => p.id === agentId)) setAgentId("all");
   }, [agentOptions, agentId]);
 
+  const localDateKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
   const { startISO, endISO } = useMemo(() => {
     const end = new Date(); end.setHours(23, 59, 59, 999);
     const start = new Date(); start.setHours(0, 0, 0, 0);
