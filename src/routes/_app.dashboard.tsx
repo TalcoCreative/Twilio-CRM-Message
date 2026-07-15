@@ -214,8 +214,8 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
 
   useEffect(() => {
     (async () => {
-      const startDate = new Date(startISO).toISOString().slice(0, 10);
-      const endDate = new Date(endISO).toISOString().slice(0, 10);
+      const startDate = localDateKey(new Date(startISO));
+      const endDate = localDateKey(new Date(endISO));
       const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes] = await Promise.all([
         supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, assigned_agent_id, created_at, stages(name, color)"),
         supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN"),
