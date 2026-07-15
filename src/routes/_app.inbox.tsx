@@ -550,7 +550,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     // Fire WhatsApp notification to the newly assigned agent (skip self & unassign)
     if (agentId && agentId !== user?.id) {
       supabase.functions.invoke("notify-agent-assign", {
-        body: { conversation_id: activeId, agent_id: agentId },
+        body: { conversation_id: activeId, agent_id: agentId, mode: "assignment" },
       }).then((r: any) => {
         if (r?.data?.ok === false && r?.data?.skipped) {
           toast.message(`Notif WA dilewati: ${r.data.skipped}`);
