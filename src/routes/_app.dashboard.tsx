@@ -352,7 +352,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       // Volume Pesan Harian: seluruh bubble (tidak di-scope).
       const dayMap: Record<string, { date: string; in: number; out: number }> = {};
       (msgsList.data || []).forEach((m: any) => {
-        const d = new Date(m.sent_at).toISOString().slice(0, 10);
+        const d = localDateKey(new Date(m.sent_at));
         dayMap[d] = dayMap[d] || { date: d, in: 0, out: 0 };
         if (m.direction === "INBOUND") dayMap[d].in++; else dayMap[d].out++;
       });
