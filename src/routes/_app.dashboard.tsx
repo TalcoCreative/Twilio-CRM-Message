@@ -1094,6 +1094,8 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         <KPI icon={CheckCircle2} label="Diterima (non-FR)" value={data.invAcceptedNonFR} color="text-emerald-500" />
         <KPI icon={AlertTriangle} label="Ditolak" value={data.invRejected} color="text-rose-500" />
         <KPI icon={Clock} label="Pending" value={data.invPending} color="text-amber-500" />
+      </div>
+
 
       <Card className="glow-soft">
         <CardHeader>
