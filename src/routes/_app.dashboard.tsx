@@ -24,6 +24,11 @@ export const Route = createFileRoute("/_app/dashboard")({
   component: DashboardGate,
 });
 
+// Bucket key pakai local time (WIB di sandbox/browser user), bukan UTC,
+// supaya konsisten dgn range startISO/endISO yang dihitung dari local midnight.
+const localDateKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 function DashboardGate() {
   const { isFirstResponse, loading } = useRole();
   const router = useRouter();
