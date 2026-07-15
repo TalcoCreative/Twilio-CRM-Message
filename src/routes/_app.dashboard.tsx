@@ -848,16 +848,23 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       }
 
       // Distribusi closing + share dari invitation accepted.
+      // - Total Closing hanya untuk pembuat invitation (from_user_id).
+      // - Closing Share hanya dibagi kalau >1 unique FR handle sebelum invitation.
+      //   Solo handler → tidak ada share sama sekali (sudah dapat Total Closing).
       for (const inv of closingInvs) {
         const closerId = inv.from_user_id;
         const c = ensureFR(closerId);
         c.closings++;
+
         const touchers = (frTouchers[inv.contact_id] && frTouchers[inv.contact_id].length)
           ? frTouchers[inv.contact_id].slice()
           : (firstFRActor[inv.contact_id] ? [firstFRActor[inv.contact_id]] : [closerId]);
         if (!touchers.includes(closerId)) touchers.push(closerId);
-        const share = 1 / touchers.length;
-        touchers.forEach((tid) => { ensureFR(tid).closingShare += share; });
+
+        if (touchers.length > 1) {
+          const share = 1 / touchers.length;
+          touchers.forEach((tid) => { ensureFR(tid).closingShare += share; });
+        }
 
         const respondedTs = inv.responded_at ? new Date(inv.responded_at).getTime() : null;
         const firstTs = firstFRTs[inv.contact_id];
@@ -866,6 +873,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           touchers.forEach((tid) => { ensureFR(tid).handleSecList.push(handleSec); });
         }
       }
+
 
       const inScope = (id: string) => !selectedAgent || id === selectedAgent;
       const frInScopeIds = Array.from(frUserIds).filter(inScope);
