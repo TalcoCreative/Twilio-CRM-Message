@@ -1045,7 +1045,9 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         <KPI icon={Trophy} label="Closing Share" value={data.totalShare} color="text-fuchsia-500" />
         <KPI icon={Timer} label="Avg First Response" value={fmtTime(data.avgFirstRespSec)} color="text-emerald-500" />
         <KPI icon={Clock} label="Avg Handle Time" value={fmtTime(data.avgHandle)} color="text-blue-500" />
-        <KPI icon={MessageCircle} label="Leads Baru" value={data.newLeads} color="text-blue-500" />
+        {!selectedAgent && (
+          <KPI icon={MessageCircle} label="Leads Baru" value={data.newLeads} color="text-blue-500" />
+        )}
         <KPI icon={UserCheck} label="Sudah Dijawab" value={data.answered} color="text-emerald-500" />
       </div>
 
