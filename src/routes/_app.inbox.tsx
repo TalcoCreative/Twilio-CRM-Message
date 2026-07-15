@@ -225,9 +225,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     return () => { supabase.removeChannel(ch); };
   }, [activeId]);
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+  // Autoscroll ke bawah dinonaktifkan sesuai permintaan — user mengatur scroll manual.
 
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "unread" | "name_asc" | "name_desc">("recent");
   const [filterUnread, setFilterUnread] = useState(false);
@@ -1026,10 +1024,11 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     );
                   }
                   const out = m.direction === "OUTBOUND";
-                  const fallbackAgent = active.assigned_agent_id || active.last_replied_by_id || null;
-                  const effectiveAgentId = m.sent_by_id || fallbackAgent;
+                  // Label pengirim STRICT berdasarkan siapa yang mengetik/mengirim pesan
+                  // (messages.sent_by_id). Jangan pernah fallback ke assigned_agent atau
+                  // last_replied_by — kalau null artinya dikirim oleh sistem/bot.
                   const senderLabel = out
-                    ? (effectiveAgentId ? agentName(effectiveAgentId) : "Sistem")
+                    ? (m.sent_by_id ? agentName(m.sent_by_id) : "Sistem")
                     : (active.contact?.full_name || "Pelanggan");
                   const isSticker = m.type === "STICKER";
                   return (
