@@ -1073,7 +1073,7 @@ function WorkflowTab() {
         <CardHeader>
           <CardTitle>Workflow Builder</CardTitle>
           <CardDescription>
-            Atur stage pipeline: ubah nama, warna, urutan, tandai sebagai default (stage awal saat lead masuk) atau terminal (akhir).
+            Atur stage pipeline: ubah nama, warna, urutan, tandai sebagai default (stage awal saat lead masuk), terminal (akhir), atau Won/Converted (stage keberhasilan — maksimal 1 stage yang bisa jadi Won).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
