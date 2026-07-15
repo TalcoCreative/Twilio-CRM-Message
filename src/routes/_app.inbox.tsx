@@ -81,6 +81,8 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const [uploading, setUploading] = useState(false);
 
   async function loadConversations() {
+    // Kalau My Inbox tapi user belum ready, jangan fetch — hindari flash "semua chat".
+    if (mineOnly && !user) { setConversations([]); return; }
     let q = supabase
       .from("conversations")
       .select("*, contact:contacts(id, full_name, whatsapp_number, stage_id, interested_product_id, chief_complaint, domicile)")
