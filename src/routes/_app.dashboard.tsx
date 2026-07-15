@@ -541,15 +541,20 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
 
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="glow-soft">
-          <CardHeader><CardTitle className="text-base">Avg Respon per Agent (menit)</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base">Avg Respon per Agent (menit)</CardTitle>
+            <p className="text-xs text-muted-foreground">Hanya pesan agent di dalam jam shift & chat yang di-assign ke agent tsb.</p>
+          </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={(data?.agentStats || []).map((a: any) => ({ name: a.name, avgMin: +(a.avg / 60).toFixed(1) }))} layout="vertical" margin={{ left: 10 }}>
+            <ResponsiveContainer width="100%" height={Math.max(260, (data?.agentStats?.length || 0) * 38)}>
+              <BarChart data={data?.agentStats || []} layout="vertical" margin={{ left: 10, right: 48 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                 <XAxis type="number" fontSize={11} />
-                <YAxis type="category" dataKey="name" fontSize={11} width={90} />
+                <YAxis type="category" dataKey="name" fontSize={11} width={100} />
                 <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} wrapperStyle={tooltipWrapperStyle} cursor={tooltipCursor} />
-                <Bar dataKey="avgMin" name="Menit" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} />
+                <Bar dataKey="avgMin" name="Menit" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]}>
+                  <LabelList dataKey="avgMin" position="right" fill="hsl(var(--foreground))" fontSize={11} formatter={(v: any) => `${v} m`} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
             {!data?.agentStats?.length && <p className="text-center text-sm text-muted-foreground py-8">Belum ada data respon.</p>}
