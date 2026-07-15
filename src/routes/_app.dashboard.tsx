@@ -672,7 +672,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
 
       <Card className="glow-soft">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2"><UserCheck className="size-4" /> Leads per Agent</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><UserCheck className="size-4" /> Leads per Agent — Historis dan Saat ini</CardTitle>
           <p className="text-xs text-muted-foreground"><b>Historis</b>: unik di-assign pada rentang. <b>Saat ini</b>: dipegang saat ini. Klik baris untuk detail.</p>
         </CardHeader>
         <CardContent>
