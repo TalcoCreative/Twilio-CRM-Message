@@ -1037,11 +1037,25 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         .sort((a, b) => b.closings - a.closings || b.slaPct - a.slaPct)
         .slice(0, 10);
 
+      // Invitation KPIs — filter dari FR, opsional per agent tertentu.
+      const invScoped = invSent.filter((i) => {
+        if (!frUserIds.has(i.from_user_id)) return false;
+        if (selectedAgent && i.from_user_id !== selectedAgent) return false;
+        return true;
+      });
+      const invSentTotal = invScoped.length;
+      const invAcceptedNonFR = invScoped.filter(
+        (i) => i.status === "accepted" && !frUserIds.has(i.to_user_id),
+      ).length;
+      const invRejected = invScoped.filter((i) => i.status === "rejected").length;
+      const invPending = invScoped.filter((i) => i.status === "pending").length;
+
       setData({
         newLeads, answered: answeredContacts.size, totalResp, avgSec,
         avgFirstRespSec, unresponded, slaCount, slaPct, hourBuckets,
         totalFirst, totalContinue, totalClosing, totalShare, avgHandle,
         hourlyData, trend, leaderboard, frAgents,
+        invSentTotal, invAcceptedNonFR, invRejected, invPending,
       });
     })();
   }, [startISO, endISO, slaGreen, slaYellow, profiles, selectedAgent, frUserIds]);
