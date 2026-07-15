@@ -448,11 +448,10 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
     <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard icon={InboxIcon} label="My Inbox" value={data?.myInbox ?? "—"} />
-        <StatCard icon={Users} label="My Leads" value={data?.myLeads ?? "—"} />
         <StatCard icon={MessageSquare} label="Percakapan Aktif" value={data?.openConv ?? "—"} />
-        <StatCard icon={Clock} label="Avg Respon Tim" value={fmtSec(data?.teamAvg || 0)} />
+        <StatCard icon={Clock} label="Avg Respon" value={fmtSec(data?.teamAvg || 0)} />
         <StatCard icon={Users} label="Total Leads" value={data?.totalContacts ?? "—"} />
-        <StatCard icon={MessageSquare} label="Pesan (Rentang)" value={data?.messagesRange ?? "—"} />
+        <StatCard icon={MessageSquare} label="Pesan" value={data?.messagesRange ?? "—"} />
         <StatCard icon={TrendingUp} label="Stage Teratas" value={data?.topStage?.name ?? "—"} />
         <StatCard icon={Wallet} label="Est. Revenue" value={`Rp ${(data?.totalRevenue || 0).toLocaleString("id-ID")}`} />
       </div>
