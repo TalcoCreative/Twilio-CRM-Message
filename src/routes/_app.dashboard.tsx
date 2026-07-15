@@ -955,17 +955,18 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const days: Record<string, { date: string; leads: number; responded: number }> = {};
       const dStart = new Date(startISO); const dEnd = new Date(endISO);
       for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
-        const key = d.toISOString().slice(0, 10);
-        days[key] = { date: key.slice(5), leads: 0, responded: 0 };
+        const key = localDateKey(d);
+        const label = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        days[key] = { date: label, leads: 0, responded: 0 };
       }
       createdInRange.forEach((e) => {
-        const key = e.occurred_at.slice(0, 10);
+        const key = localDateKey(new Date(e.occurred_at));
         if (!days[key]) return;
         if (selectedAgent && firstFRActor[e.contact_id] !== selectedAgent) return;
         days[key].leads++;
       });
       scopedFR.forEach((r) => {
-        const key = r.at.slice(0, 10);
+        const key = localDateKey(new Date(r.at));
         if (days[key]) days[key].responded++;
       });
       const trend = Object.values(days);
