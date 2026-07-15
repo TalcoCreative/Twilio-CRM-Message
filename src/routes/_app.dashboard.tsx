@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, AreaChart, Area, CartesianGrid, Legend,
+  PieChart, Pie, Cell, AreaChart, Area, CartesianGrid, Legend, LabelList,
 } from "recharts";
 
 export const Route = createFileRoute("/_app/dashboard")({
