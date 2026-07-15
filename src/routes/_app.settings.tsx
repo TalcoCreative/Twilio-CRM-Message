@@ -1099,6 +1099,7 @@ function WorkflowTab() {
                 <Badge variant="outline" className="text-xs">{counts[s.id] || 0} lead</Badge>
                 {s.is_default && <Badge className="bg-blue-500/15 text-blue-500 text-xs">Default</Badge>}
                 {s.is_terminal && <Badge className="bg-emerald-500/15 text-emerald-500 text-xs">Terminal</Badge>}
+                {s.is_won && <Badge className="bg-fuchsia-500/15 text-fuchsia-500 text-xs">Won</Badge>}
                 <div className="flex gap-1 ml-auto">
                   <Button size="sm" variant="ghost" disabled={i === 0} onClick={() => move(s.id, -1)}>↑</Button>
                   <Button size="sm" variant="ghost" disabled={i === stages.length - 1} onClick={() => move(s.id, 1)}>↓</Button>
@@ -1107,6 +1108,9 @@ function WorkflowTab() {
                   )}
                   <Button size="sm" variant="outline" onClick={() => update(s.id, { is_terminal: !s.is_terminal })}>
                     {s.is_terminal ? "Unset Terminal" : "Set Terminal"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => s.is_won ? unsetWon(s.id) : setWon(s.id)}>
+                    {s.is_won ? "Unset Won" : "Set Won"}
                   </Button>
                   <Button size="sm" variant="ghost" className="text-destructive" onClick={() => remove(s)}>Hapus</Button>
                 </div>
