@@ -59,6 +59,7 @@ function fmtSec(s: number) {
 
 function Dashboard() {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState("overview");
   const [range, setRange] = useState("7d");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -81,16 +82,24 @@ function Dashboard() {
     return arr;
   }, [profiles, frUserIds]);
 
+  const isFRTab = activeTab === "first-response";
+
   const visibleProfiles = useMemo(() => {
     if (division === "all") return profiles;
     if (division === "First Response") return profiles.filter((p) => frUserIds.has(p.id));
     return profiles.filter((p) => (p.position || "") === division);
   }, [profiles, division, frUserIds]);
 
-  // reset agent if no longer in division
+  // Di tab First Response, agent list dibatasi hanya divisi FR (tanpa filter divisi).
+  const agentOptions = useMemo(() => {
+    if (isFRTab) return profiles.filter((p) => frUserIds.has(p.id));
+    return visibleProfiles;
+  }, [isFRTab, profiles, frUserIds, visibleProfiles]);
+
+  // reset agent kalau tidak ada di list yang aktif
   useEffect(() => {
-    if (agentId !== "all" && !visibleProfiles.find((p) => p.id === agentId)) setAgentId("all");
-  }, [visibleProfiles, agentId]);
+    if (agentId !== "all" && !agentOptions.find((p) => p.id === agentId)) setAgentId("all");
+  }, [agentOptions, agentId]);
 
   const { startISO, endISO } = useMemo(() => {
     const end = new Date(); end.setHours(23, 59, 59, 999);
@@ -109,9 +118,10 @@ function Dashboard() {
   // filter helper: which user IDs are in scope
   const scopeIds = useMemo(() => {
     if (agentId !== "all") return new Set([agentId]);
+    if (isFRTab) return frUserIds; // FR tab: scope selalu ke agent FR
     if (division !== "all") return new Set(visibleProfiles.map((p) => p.id));
     return null; // null = all
-  }, [agentId, division, visibleProfiles]);
+  }, [agentId, division, visibleProfiles, isFRTab, frUserIds]);
 
   return (
     <div className="p-3 md:p-6 space-y-5 max-w-7xl mx-auto">
@@ -141,23 +151,25 @@ function Dashboard() {
               <div><Label className="text-xs">Sampai</Label><Input type="date" className="h-9" value={to} onChange={(e) => setTo(e.target.value)} /></div>
             </>
           )}
+          {!isFRTab && (
+            <div>
+              <Label className="text-xs">Divisi</Label>
+              <Select value={division} onValueChange={setDivision}>
+                <SelectTrigger className="w-40 h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua divisi</SelectItem>
+                  {divisions.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
-            <Label className="text-xs">Divisi</Label>
-            <Select value={division} onValueChange={setDivision}>
-              <SelectTrigger className="w-40 h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua divisi</SelectItem>
-                {divisions.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Agent</Label>
+            <Label className="text-xs">Agent{isFRTab ? " (First Response)" : ""}</Label>
             <Select value={agentId} onValueChange={setAgentId}>
               <SelectTrigger className="w-44 h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua agent</SelectItem>
-                {visibleProfiles.map((p) => (
+                {agentOptions.map((p) => (
                   <SelectItem key={p.id} value={p.id}>{p.full_name || p.email}</SelectItem>
                 ))}
               </SelectContent>
@@ -166,7 +178,7 @@ function Dashboard() {
         </div>
       </header>
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid grid-cols-3 w-full md:w-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="first-response">First Response</TabsTrigger>
@@ -177,7 +189,7 @@ function Dashboard() {
           <OverviewTab user={user} startISO={startISO} endISO={endISO} profiles={profiles} scopeIds={scopeIds} />
         </TabsContent>
         <TabsContent value="first-response" className="space-y-5">
-          <FirstResponseTab startISO={startISO} endISO={endISO} profiles={profiles} scopeIds={scopeIds} frUserIds={frUserIds} division={division} />
+          <FirstResponseTab startISO={startISO} endISO={endISO} profiles={profiles} scopeIds={scopeIds} frUserIds={frUserIds} />
         </TabsContent>
         <TabsContent value="performance" className="space-y-5">
           <PerformanceTab startISO={startISO} endISO={endISO} profiles={profiles} scopeIds={scopeIds} />
@@ -708,26 +720,24 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
 
 /* ============================== FIRST RESPONSE ============================== */
 
-function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, division }: {
+function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
   startISO: string; endISO: string; profiles: Profile[]; scopeIds: Set<string> | null;
-  frUserIds: Set<string>; division: string;
+  frUserIds: Set<string>;
 }) {
   const [data, setData] = useState<any>(null);
   const [slaGreen, setSlaGreen] = useState(5);
   const [slaYellow, setSlaYellow] = useState(10);
 
-  // Auto-scope to FR users when nothing is filtered AND we have FR agents,
-  // OR when division is explicitly set to "First Response".
-  const effectiveScope = useMemo<Set<string> | null>(() => {
-    if (scopeIds) return scopeIds;
-    if (division === "First Response") return frUserIds;
-    if (frUserIds.size > 0) return frUserIds; // default focus on FR team
-    return null;
-  }, [scopeIds, frUserIds, division]);
+  // Kalau user pilih agent tunggal (harus FR karena parent sudah membatasi list).
+  const selectedAgent = useMemo(
+    () => (scopeIds && scopeIds.size === 1 ? Array.from(scopeIds)[0] : null),
+    [scopeIds],
+  );
 
   useEffect(() => {
     (async () => {
-      const { data: settings } = await supabase.from("system_settings").select("key,value").in("key", ["sla_green_minutes", "sla_yellow_minutes"]);
+      const { data: settings } = await supabase.from("system_settings").select("key,value")
+        .in("key", ["sla_green_minutes", "sla_yellow_minutes"]);
       (settings || []).forEach((s: any) => {
         if (s.key === "sla_green_minutes") setSlaGreen(Number(s.value) || 5);
         if (s.key === "sla_yellow_minutes") setSlaYellow(Number(s.value) || 10);
@@ -737,66 +747,220 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, div
 
   useEffect(() => {
     (async () => {
-      // range tanggal (YYYY-MM-DD lokal) untuk lookup fr_date_shifts
-      const startDate = new Date(startISO).toISOString().slice(0, 10);
-      const endDate = new Date(endISO).toISOString().slice(0, 10);
-      const [evRes, stRes, ctRes, frShRes] = await Promise.all([
+      const [evRes, invRes, convRes, ctRes] = await Promise.all([
         supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, conversation_id, occurred_at, new_value, old_value")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)
           .order("occurred_at", { ascending: true }).limit(20000),
-        supabase.from("stages").select("id, name, order_index"),
-        supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at"),
-        supabase.from("fr_date_shifts" as any)
-          .select("agent_id, work_date, start_time, end_time")
-          .gte("work_date", startDate).lte("work_date", endDate),
+        supabase.from("assignment_invitations")
+          .select("id, from_user_id, to_user_id, contact_id, conversation_id, status, responded_at, created_at")
+          .eq("status", "accepted")
+          .gte("responded_at", startISO).lte("responded_at", endISO),
+        supabase.from("conversations")
+          .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id"),
+        supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id"),
       ]);
-      const events = evRes.data;
-      const stagesAll = (stRes.data || []) as any[];
-      const stageById: Record<string, any> = {};
-      stagesAll.forEach((s) => { stageById[s.id] = s; });
-      const frStageIds = new Set(stagesAll.filter((s) => /first response/i.test(s.name)).map((s) => s.id));
+      const evs = (evRes.data || []) as any[];
+      const invs = (invRes.data || []) as any[];
+      const convs = (convRes.data || []) as any[];
       const contactById: Record<string, any> = {};
       (ctRes.data || []).forEach((c: any) => { contactById[c.id] = c; });
-
-      // FR schedule lookup by agent + date: key `${agentId}:${YYYY-MM-DD}` -> {sMin, eMin}
-      const frShiftByAgentDate: Record<string, { sMin: number; eMin: number }> = {};
-      ((frShRes.data as any[]) || []).forEach((r) => {
-        const [sh, sm] = String(r.start_time).split(":").map(Number);
-        const [eh, em] = String(r.end_time).split(":").map(Number);
-        frShiftByAgentDate[`${r.agent_id}:${r.work_date}`] = { sMin: sh * 60 + sm, eMin: eh * 60 + em };
-      });
-      const anyFRSchedule = Object.keys(frShiftByAgentDate).length > 0;
-
-      // Non-FR: fixed benchmark Mon–Fri 08:00–17:00.
-      // FR: per-date schedule dari fr_date_shifts. Jika tidak ada baris untuk (agent, tanggal),
-      // agent tsb dianggap tidak on-shift pada tanggal itu (kecuali belum ada jadwal FR sama sekali → dianggap 24/7 agar tidak nge-zero).
-      function inShift(agentId: string, ts: number): boolean {
-        const d = new Date(ts);
-        const isFR = frUserIds.has(agentId);
-        if (!isFR) {
-          const dow = d.getDay();
-          const mins = d.getHours() * 60 + d.getMinutes();
-          if (dow < 1 || dow > 5) return false;
-          return mins >= 8 * 60 && mins < 17 * 60;
-        }
-        if (!anyFRSchedule) return true;
-        const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        const win = frShiftByAgentDate[`${agentId}:${dayKey}`];
-        if (!win) return false;
-        const mins = d.getHours() * 60 + d.getMinutes();
-        if (win.sMin <= win.eMin) return mins >= win.sMin && mins < win.eMin;
-        return mins >= win.sMin || mins < win.eMin;
-      }
-
-
       const nameById: Record<string, string> = {};
       profiles.forEach((p) => { nameById[p.id] = p.full_name || p.email || "Agent"; });
 
-      // Jam kerja aktual per agent per hari dari audit_events (semua event dengan actor_id)
+      // Hanya invitation accepted, dari FR → non-FR yang dianggap "closing".
+      const closingInvs = invs.filter((i) =>
+        frUserIds.has(i.from_user_id) && !frUserIds.has(i.to_user_id),
+      );
+
+      type FRStat = {
+        id: string; name: string;
+        firstChats: number; continuedFromOther: number;
+        closings: number; closingShare: number;
+        respAnsweredCount: number; respAnsweredTotalSec: number;
+        firstRespSecList: number[];
+        handleSecList: number[];
+        leadsHandledContactIds: Set<string>;
+      };
+      const fr: Record<string, FRStat> = {};
+      const ensureFR = (id: string) => fr[id] = fr[id] || {
+        id, name: nameById[id] || "Agent",
+        firstChats: 0, continuedFromOther: 0, closings: 0, closingShare: 0,
+        respAnsweredCount: 0, respAnsweredTotalSec: 0,
+        firstRespSecList: [], handleSecList: [],
+        leadsHandledContactIds: new Set(),
+      };
+      frUserIds.forEach((id) => ensureFR(id));
+
+      // Per-cycle state (cycle mulai saat contact_created / chat_in pertama,
+      // reset saat closing invitation accepted).
+      const cycleStartTs: Record<string, number> = {};
+      const pendingInboundTs: Record<string, number> = {};
+      const firstFRActor: Record<string, string> = {};
+      const firstFRTs: Record<string, number> = {};
+      const frTouchers: Record<string, string[]> = {};
+
+      const responses: { actor_id: string; contact_id: string; seconds: number; at: string }[] = [];
+      const firstResponses: { actor_id: string; contact_id: string; seconds: number; at: string }[] = [];
+
+      for (const e of evs) {
+        const t = new Date(e.occurred_at).getTime();
+        if (e.event_type === "contact_created") {
+          if (!cycleStartTs[e.contact_id]) cycleStartTs[e.contact_id] = t;
+        } else if (e.event_type === "chat_in") {
+          if (!cycleStartTs[e.contact_id]) cycleStartTs[e.contact_id] = t;
+          pendingInboundTs[e.contact_id] = t;
+        } else if (e.event_type === "chat_out" && e.actor_id) {
+          const isFR = frUserIds.has(e.actor_id);
+          if (isFR) {
+            const s = ensureFR(e.actor_id);
+            if (!firstFRActor[e.contact_id]) {
+              firstFRActor[e.contact_id] = e.actor_id;
+              firstFRTs[e.contact_id] = t;
+              s.firstChats++;
+              const cs = cycleStartTs[e.contact_id];
+              if (cs) {
+                const frSec = Math.max(0, Math.round((t - cs) / 1000));
+                s.firstRespSecList.push(frSec);
+                firstResponses.push({ actor_id: e.actor_id, contact_id: e.contact_id, seconds: frSec, at: e.occurred_at });
+              }
+              (frTouchers[e.contact_id] = frTouchers[e.contact_id] || []).push(e.actor_id);
+            } else if (firstFRActor[e.contact_id] !== e.actor_id) {
+              const list = frTouchers[e.contact_id] = frTouchers[e.contact_id] || [firstFRActor[e.contact_id]];
+              if (!list.includes(e.actor_id)) {
+                list.push(e.actor_id);
+                s.continuedFromOther++;
+              }
+            }
+            s.leadsHandledContactIds.add(e.contact_id);
+
+            if (pendingInboundTs[e.contact_id]) {
+              const secs = Math.max(0, Math.round((t - pendingInboundTs[e.contact_id]) / 1000));
+              s.respAnsweredCount++;
+              s.respAnsweredTotalSec += secs;
+              responses.push({ actor_id: e.actor_id, contact_id: e.contact_id, seconds: secs, at: e.occurred_at });
+              delete pendingInboundTs[e.contact_id];
+            }
+          } else if (pendingInboundTs[e.contact_id]) {
+            delete pendingInboundTs[e.contact_id];
+          }
+        }
+      }
+
+      // Distribusi closing + share dari invitation accepted.
+      for (const inv of closingInvs) {
+        const closerId = inv.from_user_id;
+        const c = ensureFR(closerId);
+        c.closings++;
+        const touchers = (frTouchers[inv.contact_id] && frTouchers[inv.contact_id].length)
+          ? frTouchers[inv.contact_id].slice()
+          : (firstFRActor[inv.contact_id] ? [firstFRActor[inv.contact_id]] : [closerId]);
+        if (!touchers.includes(closerId)) touchers.push(closerId);
+        const share = 1 / touchers.length;
+        touchers.forEach((tid) => { ensureFR(tid).closingShare += share; });
+
+        const respondedTs = inv.responded_at ? new Date(inv.responded_at).getTime() : null;
+        const firstTs = firstFRTs[inv.contact_id];
+        if (respondedTs && firstTs && respondedTs >= firstTs) {
+          const handleSec = Math.round((respondedTs - firstTs) / 1000);
+          touchers.forEach((tid) => { ensureFR(tid).handleSecList.push(handleSec); });
+        }
+      }
+
+      const inScope = (id: string) => !selectedAgent || id === selectedAgent;
+      const frInScopeIds = Array.from(frUserIds).filter(inScope);
+
+      // Leads baru = contact_created dalam rentang; kalau filter agent, hanya
+      // leads di mana agent tsb yang menjadi first responder.
+      const createdInRange = evs.filter((e) => e.event_type === "contact_created");
+      const newLeads = selectedAgent
+        ? createdInRange.filter((e) => firstFRActor[e.contact_id] === selectedAgent).length
+        : createdInRange.length;
+
+      const answeredContacts = new Set<string>();
+      if (selectedAgent) {
+        (fr[selectedAgent]?.leadsHandledContactIds || new Set()).forEach((cid) => answeredContacts.add(cid));
+      } else {
+        frInScopeIds.forEach((id) => fr[id]?.leadsHandledContactIds.forEach((cid) => answeredContacts.add(cid)));
+      }
+
+      const scopedResponses = selectedAgent
+        ? responses.filter((r) => r.actor_id === selectedAgent)
+        : responses.filter((r) => frUserIds.has(r.actor_id));
+      const totalResp = scopedResponses.length;
+      const avgSec = totalResp
+        ? Math.round(scopedResponses.reduce((s, r) => s + r.seconds, 0) / totalResp)
+        : 0;
+
+      const scopedFR = selectedAgent
+        ? firstResponses.filter((r) => r.actor_id === selectedAgent)
+        : firstResponses.filter((r) => frUserIds.has(r.actor_id));
+      const avgFirstRespSec = scopedFR.length
+        ? Math.round(scopedFR.reduce((s, r) => s + r.seconds, 0) / scopedFR.length)
+        : 0;
+
+      const totalFirst = frInScopeIds.reduce((s, id) => s + (fr[id]?.firstChats || 0), 0);
+      const totalContinue = frInScopeIds.reduce((s, id) => s + (fr[id]?.continuedFromOther || 0), 0);
+      const totalClosing = frInScopeIds.reduce((s, id) => s + (fr[id]?.closings || 0), 0);
+      const totalShare = +frInScopeIds.reduce((s, id) => s + (fr[id]?.closingShare || 0), 0).toFixed(2);
+      const allHandle = frInScopeIds.flatMap((id) => fr[id]?.handleSecList || []);
+      const avgHandle = allHandle.length ? Math.round(allHandle.reduce((s, x) => s + x, 0) / allHandle.length) : 0;
+
+      // Belum dijawab = conversation dengan unread inbound. Kalau filter agent,
+      // hanya yang currently assigned ke agent tsb. Default = assigned ke FR/unassigned.
+      let unrespondedConvs = convs.filter((c) => (c.unread_count || 0) > 0);
+      if (selectedAgent) {
+        unrespondedConvs = unrespondedConvs.filter((c) => c.assigned_agent_id === selectedAgent);
+      } else {
+        unrespondedConvs = unrespondedConvs.filter(
+          (c) => !c.assigned_agent_id || frUserIds.has(c.assigned_agent_id),
+        );
+      }
+      const unresponded = unrespondedConvs.length;
+
+      const greenS = slaGreen * 60;
+      const yellowS = slaYellow * 60;
+      const slaCount = { green: 0, yellow: 0, red: 0 };
+      scopedFR.forEach((r) => {
+        if (r.seconds <= greenS) slaCount.green++;
+        else if (r.seconds <= yellowS) slaCount.yellow++;
+        else slaCount.red++;
+      });
+      const slaPct = scopedFR.length ? Math.round((slaCount.green / scopedFR.length) * 100) : 0;
+
+      const hourBuckets = HOUR_BUCKETS.map((b) => ({ label: b.label, count: 0 }));
+      scopedFR.forEach((r) => { hourBuckets[bucketIdx(r.seconds)].count++; });
+
+      const hourly: Record<number, number> = {};
+      for (let h = 0; h < 24; h++) hourly[h] = 0;
+      createdInRange.forEach((e) => {
+        if (selectedAgent && firstFRActor[e.contact_id] !== selectedAgent) return;
+        hourly[new Date(e.occurred_at).getHours()]++;
+      });
+      const hourlyData = Object.entries(hourly).map(([h, c]) => ({ hour: `${String(h).padStart(2, "0")}:00`, count: c }));
+
+      const days: Record<string, { date: string; leads: number; responded: number }> = {};
+      const dStart = new Date(startISO); const dEnd = new Date(endISO);
+      for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
+        const key = d.toISOString().slice(0, 10);
+        days[key] = { date: key.slice(5), leads: 0, responded: 0 };
+      }
+      createdInRange.forEach((e) => {
+        const key = e.occurred_at.slice(0, 10);
+        if (!days[key]) return;
+        if (selectedAgent && firstFRActor[e.contact_id] !== selectedAgent) return;
+        days[key].leads++;
+      });
+      scopedFR.forEach((r) => {
+        const key = r.at.slice(0, 10);
+        if (days[key]) days[key].responded++;
+      });
+      const trend = Object.values(days);
+
+      // Rincian jam kerja (dari log aktivitas apa saja).
       type DayWork = { date: string; firstMs: number; lastMs: number; count: number };
       const workByAgent: Record<string, Record<string, DayWork>> = {};
-      (events || []).forEach((e: any) => {
+      evs.forEach((e: any) => {
         if (!e.actor_id) return;
         const d = new Date(e.occurred_at);
         const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -808,197 +972,25 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, div
         day.count++;
       });
 
-
-      const evs = (events || []) as any[];
-      const newLeads = evs.filter((e) => e.event_type === "contact_created").length;
-
-      // Per-contact cycle state
-      const cycleFirstInboundTs: Record<string, number> = {}; // first inbound of the current cycle
-      const pendingInboundTs: Record<string, number> = {};    // most recent unreplied inbound (for per-bubble avg)
-      const firstResponderByContact: Record<string, string> = {};
-      const ownerHistory: Record<string, string[]> = {};
-      const firstHandleAt: Record<string, number> = {};
-
-      // Per-bubble response records (each inbound answered → 1 record)
-      const responses: { contact_id: string; actor_id: string | null; seconds: number; at: string }[] = [];
-      // First-response records (per-cycle → 1 record)
-      const firstResponses: { contact_id: string; actor_id: string; seconds: number; at: string }[] = [];
-
-      type FRStat = {
-        id: string; name: string;
-        firstChats: number; continuedFromOther: number;
-        responses: number;              // total outbound bubbles by this agent (any)
-        respAnsweredCount: number;      // bubbles where an inbound was pending (per-bubble avg divisor)
-        respAnsweredTotalSec: number;   // sum of (out - lastInbound) for those bubbles
-        firstRespCount: number;         // cycles where this agent was first responder
-        firstRespTotalSec: number;      // sum of (firstOut - cycleFirstInbound)
-        totalSec: number;               // legacy — kept for compatibility
-        closings: number; closingShare: number; closingLogs: any[]; shareLogs: any[];
-        totalHandleSec: number; handleCount: number;
-      };
-      const fr: Record<string, FRStat> = {};
-      const ensureFR = (id: string) => fr[id] = fr[id] || {
-        id, name: nameById[id] || "Agent",
-        firstChats: 0, continuedFromOther: 0,
-        responses: 0, respAnsweredCount: 0, respAnsweredTotalSec: 0,
-        firstRespCount: 0, firstRespTotalSec: 0, totalSec: 0,
-        closings: 0, closingShare: 0, closingLogs: [], shareLogs: [],
-        totalHandleSec: 0, handleCount: 0,
-      };
-
-      for (const e of evs) {
-        const t = new Date(e.occurred_at).getTime();
-        if (e.event_type === "chat_in") {
-          if (!cycleFirstInboundTs[e.contact_id]) cycleFirstInboundTs[e.contact_id] = t;
-          pendingInboundTs[e.contact_id] = t; // always update to latest unreplied
-        } else if (e.event_type === "chat_out" && e.actor_id) {
-          const isFRAgent = frUserIds.has(e.actor_id);
-          const inScope = !effectiveScope || effectiveScope.has(e.actor_id);
-          const withinShift = inShift(e.actor_id, t);
-
-          // --- First response (per cycle) — only if within agent's shift ---
-          if (isFRAgent && !firstResponderByContact[e.contact_id]) {
-            const s = ensureFR(e.actor_id);
-            firstResponderByContact[e.contact_id] = e.actor_id;
-            s.firstChats++;
-            firstHandleAt[e.contact_id] = t;
-            if (cycleFirstInboundTs[e.contact_id] && withinShift) {
-              const frSec = Math.max(0, Math.round((t - cycleFirstInboundTs[e.contact_id]) / 1000));
-              s.firstRespTotalSec += frSec;
-              s.firstRespCount++;
-              if (inScope) firstResponses.push({ contact_id: e.contact_id, actor_id: e.actor_id, seconds: frSec, at: e.occurred_at });
-            }
-          } else if (isFRAgent && firstResponderByContact[e.contact_id] !== e.actor_id) {
-            const s = ensureFR(e.actor_id);
-            const hist = ownerHistory[e.contact_id] = ownerHistory[e.contact_id] || [];
-            if (!hist.includes(e.actor_id)) s.continuedFromOther++;
-          }
-
-          const hist = ownerHistory[e.contact_id] = ownerHistory[e.contact_id] || [];
-          if (isFRAgent && hist[hist.length - 1] !== e.actor_id) hist.push(e.actor_id);
-
-          // --- Per-bubble response — only if within shift ---
-          if (isFRAgent) {
-            const s = ensureFR(e.actor_id);
-            s.responses++;
-            if (pendingInboundTs[e.contact_id] && withinShift) {
-              const seconds = Math.max(0, Math.round((t - pendingInboundTs[e.contact_id]) / 1000));
-              s.respAnsweredCount++;
-              s.respAnsweredTotalSec += seconds;
-              s.totalSec += seconds;
-              if (inScope) responses.push({ contact_id: e.contact_id, actor_id: e.actor_id, seconds, at: e.occurred_at });
-              delete pendingInboundTs[e.contact_id];
-            } else if (pendingInboundTs[e.contact_id]) {
-              // Answered but outside shift → consume without crediting
-              delete pendingInboundTs[e.contact_id];
-            }
-          } else {
-            if (pendingInboundTs[e.contact_id]) delete pendingInboundTs[e.contact_id];
-          }
-        } else if (e.event_type === "stage_changed" && e.actor_id && frUserIds.has(e.actor_id)) {
-          const newStageId = e.new_value?.stage_id;
-          const oldStageId = e.old_value?.stage_id;
-          if (newStageId && !frStageIds.has(newStageId) && (!oldStageId || frStageIds.has(oldStageId) || ownerHistory[e.contact_id])) {
-            const closer = ensureFR(e.actor_id);
-            closer.closings++;
-            const contributors = (ownerHistory[e.contact_id] || []).slice();
-            if (!contributors.includes(e.actor_id)) contributors.push(e.actor_id);
-            const share = contributors.length ? 1 / contributors.length : 0;
-            const contact = contactById[e.contact_id] || {};
-            const handleSec = firstHandleAt[e.contact_id]
-              ? Math.round((t - firstHandleAt[e.contact_id]) / 1000) : 0;
-            const closerInShift = inShift(e.actor_id, t);
-            if (handleSec > 0 && closerInShift) { closer.totalHandleSec += handleSec; closer.handleCount++; }
-            const closingLog = {
-              contact_id: e.contact_id,
-              customer: contact.full_name || contact.whatsapp_number || "—",
-              at: e.occurred_at,
-              to_stage: stageById[newStageId]?.name || "—",
-              handle_sec: handleSec,
-              contributors: contributors.map((id) => nameById[id] || id),
-            };
-            closer.closingLogs.push(closingLog);
-            for (const cid of contributors) {
-              const c = ensureFR(cid);
-              c.closingShare += share;
-              c.shareLogs.push({
-                contact_id: e.contact_id,
-                customer: contact.full_name || contact.whatsapp_number || "—",
-                role: cid === firstResponderByContact[e.contact_id] ? "First Response" : "Continue",
-                contributors_count: contributors.length,
-                share,
-                closing_by: nameById[e.actor_id] || "—",
-                at: e.occurred_at,
-              });
-            }
-            // Reset cycle
-            delete ownerHistory[e.contact_id];
-            delete firstResponderByContact[e.contact_id];
-            delete firstHandleAt[e.contact_id];
-            delete cycleFirstInboundTs[e.contact_id];
-            delete pendingInboundTs[e.contact_id];
-          }
-        }
-      }
-
-      const totalResp = responses.length;
-      const avgSec = totalResp ? Math.round(responses.reduce((s, r) => s + r.seconds, 0) / totalResp) : 0;
-      const avgFirstRespSec = firstResponses.length
-        ? Math.round(firstResponses.reduce((s, r) => s + r.seconds, 0) / firstResponses.length)
-        : 0;
-      const unresponded = Object.keys(pendingInboundTs).length;
-
-
-      const greenS = slaGreen * 60;
-      const yellowS = slaYellow * 60;
-      const slaCount = { green: 0, yellow: 0, red: 0 };
-      responses.forEach((r) => {
-        if (r.seconds <= greenS) slaCount.green++;
-        else if (r.seconds <= yellowS) slaCount.yellow++;
-        else slaCount.red++;
-      });
-
-      const hourBuckets = HOUR_BUCKETS.map((b) => ({ label: b.label, count: 0 }));
-      responses.forEach((r) => { hourBuckets[bucketIdx(r.seconds)].count++; });
-
-      const perAgent: Record<string, { name: string; count: number; total: number; green: number }> = {};
-      responses.forEach((r) => {
-        const name = (r.actor_id && nameById[r.actor_id]) || "Tidak Diketahui";
-        perAgent[name] = perAgent[name] || { name, count: 0, total: 0, green: 0 };
-        perAgent[name].count++;
-        perAgent[name].total += r.seconds;
-        if (r.seconds <= greenS) perAgent[name].green++;
-      });
-      const leaderboard = Object.values(perAgent)
-        .map((a) => ({ name: a.name, avg: Math.round(a.total / a.count), count: a.count, slaPct: Math.round((a.green / a.count) * 100) }))
-        .sort((a, b) => a.avg - b.avg).slice(0, 10);
-
-      // FR list — apply scope filter to KPIs
-      const frInScope = Array.from(frUserIds).filter((id) => !effectiveScope || effectiveScope.has(id));
-      const frAgents = frInScope.map((id) => {
-        const s = fr[id] || {
-          id, name: nameById[id] || "Agent",
-          firstChats: 0, continuedFromOther: 0,
-          responses: 0, respAnsweredCount: 0, respAnsweredTotalSec: 0,
-          firstRespCount: 0, firstRespTotalSec: 0, totalSec: 0,
-          closings: 0, closingShare: 0, closingLogs: [], shareLogs: [],
-          totalHandleSec: 0, handleCount: 0,
-        };
+      const frAgents = frInScopeIds.map((id) => {
+        const s = fr[id];
         const daysWorked = workByAgent[id] ? Object.values(workByAgent[id]) : [];
         const totalWorkH = daysWorked.reduce((sum, d) => sum + (d.lastMs - d.firstMs) / 3600000, 0);
         const avgWorkH = daysWorked.length ? totalWorkH / daysWorked.length : 0;
+        const avgFR = s.firstRespSecList.length
+          ? Math.round(s.firstRespSecList.reduce((a, b) => a + b, 0) / s.firstRespSecList.length) : 0;
+        const avgResp = s.respAnsweredCount ? Math.round(s.respAnsweredTotalSec / s.respAnsweredCount) : 0;
+        const avgHandleSec = s.handleSecList.length
+          ? Math.round(s.handleSecList.reduce((a, b) => a + b, 0) / s.handleSecList.length) : 0;
         return {
-          id, name: s.name,
+          id, name: nameById[id] || "Agent",
           firstChats: s.firstChats,
           continuedFromOther: s.continuedFromOther,
-          responses: s.responses,
           closings: s.closings,
-          closingShare: +s.closingShare.toFixed(4),
-          closingLogs: s.closingLogs,
-          shareLogs: s.shareLogs,
-          avgFirstRespSec: s.firstRespCount ? Math.round(s.firstRespTotalSec / s.firstRespCount) : 0,
-          avgRespSec: s.respAnsweredCount ? Math.round(s.respAnsweredTotalSec / s.respAnsweredCount) : 0,
-          avgHandleSec: s.handleCount ? Math.round(s.totalHandleSec / s.handleCount) : 0,
+          closingShare: +s.closingShare.toFixed(2),
+          avgFirstRespSec: avgFR,
+          avgRespSec: avgResp,
+          avgHandleSec,
           avgWorkHours: +avgWorkH.toFixed(2),
           daysActive: daysWorked.length,
           dailyWork: daysWorked
@@ -1011,71 +1003,33 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, div
               activities: d.count,
             })),
         };
-      }).sort((a, b) => b.firstChats - a.firstChats);
+      }).sort((a, b) => b.closings - a.closings || b.firstChats - a.firstChats);
 
-
-      // Aggregate KPIs
-      const totalFirst = frAgents.reduce((s, a) => s + a.firstChats, 0);
-      const totalContinue = frAgents.reduce((s, a) => s + a.continuedFromOther, 0);
-      const totalClosing = frAgents.reduce((s, a) => s + a.closings, 0);
-      const totalShare = +frAgents.reduce((s, a) => s + a.closingShare, 0).toFixed(2);
-      const avgHandle = (() => {
-        const list = frAgents.filter((a) => a.avgHandleSec > 0);
-        return list.length ? Math.round(list.reduce((s, a) => s + a.avgHandleSec, 0) / list.length) : 0;
-      })();
-      // Hanging: leads where FR was owner but still in FR stage and no closing recorded
-      const hangingSet = new Set<string>();
-      Object.entries(firstResponderByContact).forEach(([cid, ownerId]) => {
-        if (effectiveScope && !effectiveScope.has(ownerId)) return;
-        const contact = contactById[cid];
-        if (contact && contact.stage_id && frStageIds.has(contact.stage_id)) hangingSet.add(cid);
-      });
-      const hanging = hangingSet.size;
-      const totalLeadsHandled = new Set(Object.keys(ownerHistory).concat(Object.keys(firstResponderByContact))).size;
-      const activeFRCount = frInScope.length;
-      const avgLeadsPerFR = activeFRCount ? +(totalLeadsHandled / activeFRCount).toFixed(2) : 0;
-
-      // Beban per Jam = jumlah leads baru per jam (contact_created), bukan tiap chat_in bubble.
-      const hourly: Record<number, number> = {};
-      for (let h = 0; h < 24; h++) hourly[h] = 0;
-      evs.filter((e) => e.event_type === "contact_created").forEach((e) => {
-        const h = new Date(e.occurred_at).getHours();
-        hourly[h]++;
-      });
-      const hourlyData = Object.entries(hourly).map(([h, c]) => ({ hour: `${String(h).padStart(2, "0")}:00`, count: c }));
-
-      const days: Record<string, { date: string; leads: number; responded: number }> = {};
-      const dStart = new Date(startISO); const dEnd = new Date(endISO);
-      for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
-        const key = d.toISOString().slice(0, 10);
-        days[key] = { date: key.slice(5), leads: 0, responded: 0 };
-      }
-      evs.forEach((e) => {
-        const key = e.occurred_at.slice(0, 10);
-        if (!days[key]) return;
-        if (e.event_type === "contact_created") days[key].leads++;
-      });
-      responses.forEach((r) => {
-        const key = r.at.slice(0, 10);
-        if (days[key]) days[key].responded++;
-      });
-      const trend = Object.values(days);
+      const leaderboard = frInScopeIds.map((id) => {
+        const s = fr[id];
+        const firstList = s.firstRespSecList;
+        const green = firstList.filter((sec) => sec <= greenS).length;
+        return {
+          name: nameById[id] || "Agent",
+          closings: s.closings,
+          firstChats: s.firstChats,
+          slaPct: firstList.length ? Math.round((green / firstList.length) * 100) : 0,
+        };
+      }).filter((a) => a.closings > 0 || a.firstChats > 0)
+        .sort((a, b) => b.closings - a.closings || b.slaPct - a.slaPct)
+        .slice(0, 10);
 
       setData({
-        newLeads, totalResp, avgSec, avgFirstRespSec, unresponded, slaCount,
-        leaderboard, hourlyData, trend, hourBuckets,
-        frAgents,
+        newLeads, answered: answeredContacts.size, totalResp, avgSec,
+        avgFirstRespSec, unresponded, slaCount, slaPct, hourBuckets,
         totalFirst, totalContinue, totalClosing, totalShare, avgHandle,
-        hanging, avgLeadsPerFR,
-        slaPct: totalResp ? Math.round((slaCount.green / totalResp) * 100) : 0,
+        hourlyData, trend, leaderboard, frAgents,
       });
-
     })();
-  }, [startISO, endISO, slaGreen, slaYellow, profiles, scopeIds, effectiveScope, frUserIds]);
-
+  }, [startISO, endISO, slaGreen, slaYellow, profiles, selectedAgent, frUserIds]);
 
   if (!data) return <div className="text-muted-foreground py-10 text-center">Memuat...</div>;
-  const fmtTime = (s: number) => s < 60 ? `${s}d` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}d` : `${Math.floor(s / 3600)}j ${Math.floor((s % 3600) / 60)}m`;
+  const fmtTime = (s: number) => !s ? "—" : s < 60 ? `${s}d` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}d` : `${Math.floor(s / 3600)}j ${Math.floor((s % 3600) / 60)}m`;
   const slaPie = [
     { name: `Hijau (<${slaGreen}m)`, value: data.slaCount.green, fill: "#10b981" },
     { name: `Kuning (${slaGreen}-${slaYellow}m)`, value: data.slaCount.yellow, fill: "#f59e0b" },
@@ -1089,23 +1043,21 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, div
         <KPI icon={ArrowRightLeft} label="Continue Conversation" value={data.totalContinue} color="text-amber-500" />
         <KPI icon={CheckCircle2} label="Total Closing" value={data.totalClosing} color="text-primary" />
         <KPI icon={Trophy} label="Closing Share" value={data.totalShare} color="text-fuchsia-500" />
-        <KPI icon={AlertTriangle} label="Hanging Conv." value={data.hanging} color="text-rose-500" />
         <KPI icon={Timer} label="Avg First Response" value={fmtTime(data.avgFirstRespSec)} color="text-emerald-500" />
         <KPI icon={Clock} label="Avg Handle Time" value={fmtTime(data.avgHandle)} color="text-blue-500" />
-        <KPI icon={Users} label="Avg Leads / FR Agent" value={data.avgLeadsPerFR} color="text-primary" />
+        <KPI icon={MessageCircle} label="Leads Baru" value={data.newLeads} color="text-blue-500" />
+        <KPI icon={UserCheck} label="Sudah Dijawab" value={data.answered} color="text-emerald-500" />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <KPI icon={MessageCircle} label="Leads Baru" value={data.newLeads} color="text-blue-500" />
-        <KPI icon={UserCheck} label="Sudah Dijawab" value={data.totalResp} color="text-emerald-500" />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <KPI icon={Timer} label="Avg Respon" value={fmtTime(data.avgSec)} color="text-primary" />
-        <KPI icon={Zap} label={`SLA <${slaGreen}m`} value={`${data.slaPct}%`} color="text-emerald-500" />
         <KPI icon={AlertTriangle} label="Belum Dijawab" value={data.unresponded} color="text-rose-500" />
+        <KPI icon={Zap} label="SLA Hijau %" value={`${data.slaPct}%`} color="text-emerald-500" />
       </div>
 
       <Card className="glow-soft">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2"><Clock className="size-4" /> Distribusi Waktu First Response (jam)</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Clock className="size-4" /> Distribusi Waktu First Response</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
@@ -1198,8 +1150,9 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, div
       <Card className="glow-soft">
         <CardHeader><CardTitle className="text-base flex items-center gap-2"><Trophy className="size-4" /> Leaderboard First Response</CardTitle></CardHeader>
         <CardContent>
+          <p className="text-[11px] text-muted-foreground mb-2">Diranking berdasarkan Total Closing, tie-break SLA%.</p>
           {data.leaderboard.length === 0 ? (
-            <div className="text-sm text-muted-foreground text-center py-8">Belum ada data respon.</div>
+            <div className="text-sm text-muted-foreground text-center py-8">Belum ada data.</div>
           ) : (
             <div className="space-y-2">
               {data.leaderboard.map((a: any, i: number) => (
@@ -1207,9 +1160,8 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, div
                   <div className="size-8 grid place-items-center rounded-lg bg-primary/10 text-primary font-semibold">{i + 1}</div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{a.name}</div>
-                    <div className="text-[11px] text-muted-foreground">{a.count} respon</div>
+                    <div className="text-[11px] text-muted-foreground">{a.closings} closing · {a.firstChats} first resp.</div>
                   </div>
-                  <Badge variant="outline" className="font-mono text-xs">{fmtTime(a.avg)}</Badge>
                   <Badge className={a.slaPct >= 80 ? "bg-emerald-500/15 text-emerald-500" : a.slaPct >= 50 ? "bg-amber-500/15 text-amber-500" : "bg-rose-500/15 text-rose-500"}>
                     {a.slaPct}% SLA
                   </Badge>
@@ -1225,9 +1177,6 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, div
           <CardTitle className="text-base flex items-center gap-2">
             <Users className="size-4" /> Detail Tim First Response (Historis)
           </CardTitle>
-          <p className="text-[11px] text-muted-foreground mt-1">
-            Chat Pertama = handle pertama untuk lead. Lanjutan Shift = melanjutkan lead yang sebelumnya dipegang FR lain.
-          </p>
         </CardHeader>
         <CardContent>
           {(!data.frAgents || data.frAgents.length === 0) ? (
@@ -1242,36 +1191,24 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, div
                     <th className="py-2 pr-3 text-right">Continue</th>
                     <th className="py-2 pr-3 text-right">Closing</th>
                     <th className="py-2 pr-3 text-right">Closing Share</th>
-                    <th className="py-2 pr-3 text-right">Total Respon</th>
                     <th className="py-2 pr-3 text-right">Avg First Resp.</th>
                     <th className="py-2 pr-3 text-right">Avg Resp.</th>
                     <th className="py-2 pr-3 text-right">Avg Handle</th>
                     <th className="py-2 pr-3 text-right">Hari Aktif</th>
                     <th className="py-2 pr-3 text-right">Avg Jam Kerja/Hari</th>
                   </tr>
-
                 </thead>
                 <tbody>
                   {data.frAgents.map((a: any) => (
                     <tr key={a.id} className="border-b last:border-0 hover:bg-accent/30">
                       <td className="py-2 pr-3 font-medium">{a.name}</td>
-                      <td className="py-2 pr-3 text-right">
-                        <Badge className="bg-emerald-500/15 text-emerald-500 font-mono">{a.firstChats}</Badge>
-                      </td>
-                      <td className="py-2 pr-3 text-right">
-                        <Badge className="bg-amber-500/15 text-amber-500 font-mono">{a.continuedFromOther}</Badge>
-                      </td>
-                      <td className="py-2 pr-3 text-right">
-                        <Badge className="bg-primary/15 text-primary font-mono">{a.closings}</Badge>
-                      </td>
-                      <td className="py-2 pr-3 text-right">
-                        <Badge className="bg-fuchsia-500/15 text-fuchsia-500 font-mono">{a.closingShare.toFixed(2)}</Badge>
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono">{a.responses}</td>
+                      <td className="py-2 pr-3 text-right"><Badge className="bg-emerald-500/15 text-emerald-500 font-mono">{a.firstChats}</Badge></td>
+                      <td className="py-2 pr-3 text-right"><Badge className="bg-amber-500/15 text-amber-500 font-mono">{a.continuedFromOther}</Badge></td>
+                      <td className="py-2 pr-3 text-right"><Badge className="bg-primary/15 text-primary font-mono">{a.closings}</Badge></td>
+                      <td className="py-2 pr-3 text-right"><Badge className="bg-fuchsia-500/15 text-fuchsia-500 font-mono">{a.closingShare.toFixed(2)}</Badge></td>
                       <td className="py-2 pr-3 text-right font-mono">{a.avgFirstRespSec ? fmtTime(a.avgFirstRespSec) : "-"}</td>
                       <td className="py-2 pr-3 text-right font-mono">{a.avgRespSec ? fmtTime(a.avgRespSec) : "-"}</td>
                       <td className="py-2 pr-3 text-right font-mono">{a.avgHandleSec ? fmtTime(a.avgHandleSec) : "-"}</td>
-
                       <td className="py-2 pr-3 text-right font-mono">{a.daysActive}</td>
                       <td className="py-2 pr-3 text-right font-mono">{a.avgWorkHours > 0 ? `${a.avgWorkHours.toFixed(2)} j` : "-"}</td>
                     </tr>
@@ -1283,7 +1220,6 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds, div
         </CardContent>
       </Card>
 
-      {/* Rincian Jam Kerja Harian per Agent */}
       <Card className="glow-soft">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
