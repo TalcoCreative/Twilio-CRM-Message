@@ -1051,13 +1051,29 @@ function WorkflowTab() {
     load();
   }
 
+  async function setWon(id: string) {
+    // Hanya 1 stage boleh jadi Won — unset dulu semua, lalu set target.
+    const { error: eClear } = await supabase.from("stages").update({ is_won: false })
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+    if (eClear) return toast.error(eClear.message);
+    const { error } = await supabase.from("stages").update({ is_won: true }).eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Stage Won diperbarui");
+    load();
+  }
+
+  async function unsetWon(id: string) {
+    const { error } = await supabase.from("stages").update({ is_won: false }).eq("id", id);
+    if (error) toast.error(error.message); else { toast.success("Won dilepas"); load(); }
+  }
+
   return (
     <div className="space-y-4 mt-4">
       <Card>
         <CardHeader>
           <CardTitle>Workflow Builder</CardTitle>
           <CardDescription>
-            Atur stage pipeline: ubah nama, warna, urutan, tandai sebagai default (stage awal saat lead masuk) atau terminal (akhir).
+            Atur stage pipeline: ubah nama, warna, urutan, tandai sebagai default (stage awal saat lead masuk), terminal (akhir), atau Won/Converted (stage keberhasilan — maksimal 1 stage yang bisa jadi Won).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -1083,6 +1099,7 @@ function WorkflowTab() {
                 <Badge variant="outline" className="text-xs">{counts[s.id] || 0} lead</Badge>
                 {s.is_default && <Badge className="bg-blue-500/15 text-blue-500 text-xs">Default</Badge>}
                 {s.is_terminal && <Badge className="bg-emerald-500/15 text-emerald-500 text-xs">Terminal</Badge>}
+                {s.is_won && <Badge className="bg-fuchsia-500/15 text-fuchsia-500 text-xs">Won</Badge>}
                 <div className="flex gap-1 ml-auto">
                   <Button size="sm" variant="ghost" disabled={i === 0} onClick={() => move(s.id, -1)}>↑</Button>
                   <Button size="sm" variant="ghost" disabled={i === stages.length - 1} onClick={() => move(s.id, 1)}>↓</Button>
@@ -1091,6 +1108,9 @@ function WorkflowTab() {
                   )}
                   <Button size="sm" variant="outline" onClick={() => update(s.id, { is_terminal: !s.is_terminal })}>
                     {s.is_terminal ? "Unset Terminal" : "Set Terminal"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => s.is_won ? unsetWon(s.id) : setWon(s.id)}>
+                    {s.is_won ? "Unset Won" : "Set Won"}
                   </Button>
                   <Button size="sm" variant="ghost" className="text-destructive" onClick={() => remove(s)}>Hapus</Button>
                 </div>

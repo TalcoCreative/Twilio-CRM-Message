@@ -752,7 +752,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
   useEffect(() => {
     (async () => {
-      const [evRes, invRes, convRes, ctRes] = await Promise.all([
+      const [evRes, invRes, invSentRes, convRes, ctRes] = await Promise.all([
         supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, conversation_id, occurred_at, new_value, old_value")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)
@@ -761,12 +761,16 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           .select("id, from_user_id, to_user_id, contact_id, conversation_id, status, responded_at, created_at")
           .eq("status", "accepted")
           .gte("responded_at", startISO).lte("responded_at", endISO),
+        supabase.from("assignment_invitations")
+          .select("id, from_user_id, to_user_id, status, created_at")
+          .gte("created_at", startISO).lte("created_at", endISO),
         supabase.from("conversations")
           .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id"),
         supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id"),
       ]);
       const evs = (evRes.data || []) as any[];
       const invs = (invRes.data || []) as any[];
+      const invSent = (invSentRes.data || []) as any[];
       const convs = (convRes.data || []) as any[];
       const contactById: Record<string, any> = {};
       (ctRes.data || []).forEach((c: any) => { contactById[c.id] = c; });
@@ -1033,11 +1037,25 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         .sort((a, b) => b.closings - a.closings || b.slaPct - a.slaPct)
         .slice(0, 10);
 
+      // Invitation KPIs — filter dari FR, opsional per agent tertentu.
+      const invScoped = invSent.filter((i) => {
+        if (!frUserIds.has(i.from_user_id)) return false;
+        if (selectedAgent && i.from_user_id !== selectedAgent) return false;
+        return true;
+      });
+      const invSentTotal = invScoped.length;
+      const invAcceptedNonFR = invScoped.filter(
+        (i) => i.status === "accepted" && !frUserIds.has(i.to_user_id),
+      ).length;
+      const invRejected = invScoped.filter((i) => i.status === "rejected").length;
+      const invPending = invScoped.filter((i) => i.status === "pending").length;
+
       setData({
         newLeads, answered: answeredContacts.size, totalResp, avgSec,
         avgFirstRespSec, unresponded, slaCount, slaPct, hourBuckets,
         totalFirst, totalContinue, totalClosing, totalShare, avgHandle,
         hourlyData, trend, leaderboard, frAgents,
+        invSentTotal, invAcceptedNonFR, invRejected, invPending,
       });
     })();
   }, [startISO, endISO, slaGreen, slaYellow, profiles, selectedAgent, frUserIds]);
@@ -1070,6 +1088,14 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         <KPI icon={AlertTriangle} label="Belum Dijawab" value={data.unresponded} color="text-rose-500" />
         <KPI icon={Zap} label="SLA Hijau %" value={`${data.slaPct}%`} color="text-emerald-500" />
       </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KPI icon={ArrowRightLeft} label="Invitation Dikirim" value={data.invSentTotal} color="text-primary" />
+        <KPI icon={CheckCircle2} label="Diterima (non-FR)" value={data.invAcceptedNonFR} color="text-emerald-500" />
+        <KPI icon={AlertTriangle} label="Ditolak" value={data.invRejected} color="text-rose-500" />
+        <KPI icon={Clock} label="Pending" value={data.invPending} color="text-amber-500" />
+      </div>
+
 
       <Card className="glow-soft">
         <CardHeader>

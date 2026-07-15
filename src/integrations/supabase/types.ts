@@ -650,6 +650,7 @@ export type Database = {
           id: string
           is_default: boolean
           is_terminal: boolean
+          is_won: boolean
           name: string
           order_index: number
           owner_role: Database["public"]["Enums"]["app_role"]
@@ -660,6 +661,7 @@ export type Database = {
           id?: string
           is_default?: boolean
           is_terminal?: boolean
+          is_won?: boolean
           name: string
           order_index?: number
           owner_role?: Database["public"]["Enums"]["app_role"]
@@ -670,6 +672,7 @@ export type Database = {
           id?: string
           is_default?: boolean
           is_terminal?: boolean
+          is_won?: boolean
           name?: string
           order_index?: number
           owner_role?: Database["public"]["Enums"]["app_role"]
