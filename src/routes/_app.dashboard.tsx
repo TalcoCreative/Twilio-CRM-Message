@@ -807,8 +807,39 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const firstFRTs: Record<string, number> = {};
       const frTouchers: Record<string, string[]> = {};
 
+      // Seed dari histori: kalau contact sudah pernah dibalas FR SEBELUM rentang,
+      // set FR pertama itu sebagai firstFRActor supaya balasan FR lain di rentang
+      // dihitung sbg "continue conversation", bukan "first chat".
+      const contactIdsInRange = Array.from(new Set(evs.map((e) => e.contact_id).filter(Boolean)));
+      if (contactIdsInRange.length && frUserIds.size) {
+        const CHUNK = 200;
+        const priorFR: any[] = [];
+        for (let i = 0; i < contactIdsInRange.length; i += CHUNK) {
+          const slice = contactIdsInRange.slice(i, i + CHUNK);
+          const { data: prior } = await supabase.from("audit_events")
+            .select("actor_id, contact_id, occurred_at")
+            .eq("event_type", "chat_out")
+            .in("contact_id", slice)
+            .in("actor_id", Array.from(frUserIds))
+            .lt("occurred_at", startISO)
+            .order("occurred_at", { ascending: true })
+            .limit(20000);
+          if (prior) priorFR.push(...prior);
+        }
+        for (const p of priorFR) {
+          if (!p.contact_id || !p.actor_id) continue;
+          if (!firstFRActor[p.contact_id]) {
+            firstFRActor[p.contact_id] = p.actor_id;
+            firstFRTs[p.contact_id] = new Date(p.occurred_at).getTime();
+          }
+          const list = frTouchers[p.contact_id] = frTouchers[p.contact_id] || [];
+          if (!list.includes(p.actor_id)) list.push(p.actor_id);
+        }
+      }
+
       const responses: { actor_id: string; contact_id: string; seconds: number; at: string }[] = [];
       const firstResponses: { actor_id: string; contact_id: string; seconds: number; at: string }[] = [];
+
 
       for (const e of evs) {
         const t = new Date(e.occurred_at).getTime();
