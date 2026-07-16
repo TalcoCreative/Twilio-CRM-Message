@@ -807,6 +807,26 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const firstFRTs: Record<string, number> = {};
       const frTouchers: Record<string, string[]> = {};
 
+      const eventMessageType = (event: any) => String(event?.new_value?.type || "").toUpperCase();
+      const isInternalNoteEvent = (event: any) => eventMessageType(event) === "INTERNAL_NOTE";
+      const valueAgentId = (value: any) => (typeof value?.agent_id === "string" ? value.agent_id : null);
+      const markContinueFromFR = (contactId: string, actorId: string, previousFrId?: string | null) => {
+        if (!contactId || !actorId || !frUserIds.has(actorId)) return;
+        if (previousFrId && frUserIds.has(previousFrId) && previousFrId !== actorId && !firstFRActor[contactId]) {
+          firstFRActor[contactId] = previousFrId;
+        }
+        const initial = firstFRActor[contactId] ? [firstFRActor[contactId]] : [];
+        const list = frTouchers[contactId] = frTouchers[contactId] || initial;
+        if (previousFrId && frUserIds.has(previousFrId) && previousFrId !== actorId && !list.includes(previousFrId)) {
+          list.unshift(previousFrId);
+        }
+        if (list.some((id) => id !== actorId) && !list.includes(actorId)) {
+          list.push(actorId);
+          ensureFR(actorId).continuedFromOther++;
+        }
+        ensureFR(actorId).leadsHandledContactIds.add(contactId);
+      };
+
       // Seed dari histori: kalau contact sudah pernah dibalas FR SEBELUM rentang,
       // set FR pertama itu sebagai firstFRActor supaya balasan FR lain di rentang
       // dihitung sbg "continue conversation", bukan "first chat".
@@ -817,7 +837,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         for (let i = 0; i < contactIdsInRange.length; i += CHUNK) {
           const slice = contactIdsInRange.slice(i, i + CHUNK);
           const { data: prior } = await supabase.from("audit_events")
-            .select("actor_id, contact_id, occurred_at")
+            .select("actor_id, contact_id, occurred_at, new_value")
             .eq("event_type", "chat_out")
             .in("contact_id", slice)
             .in("actor_id", Array.from(frUserIds))
@@ -828,6 +848,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         }
         for (const p of priorFR) {
           if (!p.contact_id || !p.actor_id) continue;
+          if (isInternalNoteEvent(p)) continue;
           if (!firstFRActor[p.contact_id]) {
             firstFRActor[p.contact_id] = p.actor_id;
             firstFRTs[p.contact_id] = new Date(p.occurred_at).getTime();
@@ -849,6 +870,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           if (!cycleStartTs[e.contact_id]) cycleStartTs[e.contact_id] = t;
           pendingInboundTs[e.contact_id] = t;
         } else if (e.event_type === "chat_out" && e.actor_id) {
+          if (isInternalNoteEvent(e)) continue;
           const isFR = frUserIds.has(e.actor_id);
           if (isFR) {
             const s = ensureFR(e.actor_id);
@@ -864,11 +886,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
               }
               (frTouchers[e.contact_id] = frTouchers[e.contact_id] || []).push(e.actor_id);
             } else if (firstFRActor[e.contact_id] !== e.actor_id) {
-              const list = frTouchers[e.contact_id] = frTouchers[e.contact_id] || [firstFRActor[e.contact_id]];
-              if (!list.includes(e.actor_id)) {
-                list.push(e.actor_id);
-                s.continuedFromOther++;
-              }
+              markContinueFromFR(e.contact_id, e.actor_id, firstFRActor[e.contact_id]);
             }
             s.leadsHandledContactIds.add(e.contact_id);
 
@@ -881,6 +899,12 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
             }
           } else if (pendingInboundTs[e.contact_id]) {
             delete pendingInboundTs[e.contact_id];
+          }
+        } else if ((e.event_type === "conv_takeover" || e.event_type === "reassigned") && e.actor_id) {
+          const oldAgent = valueAgentId(e.old_value);
+          const newAgent = valueAgentId(e.new_value);
+          if (newAgent === e.actor_id && oldAgent && frUserIds.has(oldAgent) && oldAgent !== e.actor_id) {
+            markContinueFromFR(e.contact_id, e.actor_id, oldAgent);
           }
         }
       }
