@@ -867,8 +867,13 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       // reset saat closing invitation accepted).
       const cycleStartTs: Record<string, number> = {};
       const pendingInboundTs: Record<string, number> = {};
+      // firstFRActor: FR pertama yang membalas contact DI DALAM rentang.
+      // priorFRActor: FR pertama SEBELUM rentang (dipakai HANYA untuk deteksi
+      // continue conversation — tidak menekan firstChats supaya Total First
+      // Response tetap ikut rentang waktu).
       const firstFRActor: Record<string, string> = {};
       const firstFRTs: Record<string, number> = {};
+      const priorFRActor: Record<string, string> = {};
       const frTouchers: Record<string, string[]> = {};
 
       const eventMessageType = (event: any) => String(event?.new_value?.type || "").toUpperCase();
@@ -880,10 +885,8 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
       const markContinueFromFR = (contactId: string, actorId: string, previousFrId: string | null | undefined, at: string, via: string) => {
         if (!contactId || !actorId || !frUserIds.has(actorId)) return;
-        if (previousFrId && frUserIds.has(previousFrId) && previousFrId !== actorId && !firstFRActor[contactId]) {
-          firstFRActor[contactId] = previousFrId;
-        }
-        const initial = firstFRActor[contactId] ? [firstFRActor[contactId]] : [];
+        const seed = firstFRActor[contactId] || priorFRActor[contactId];
+        const initial = seed ? [seed] : [];
         const list = frTouchers[contactId] = frTouchers[contactId] || initial;
         if (previousFrId && frUserIds.has(previousFrId) && previousFrId !== actorId && !list.includes(previousFrId)) {
           list.unshift(previousFrId);
@@ -918,12 +921,9 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         for (const p of priorFR) {
           if (!p.contact_id || !p.actor_id) continue;
           if (isInternalNoteEvent(p)) continue;
-          if (!firstFRActor[p.contact_id]) {
-            firstFRActor[p.contact_id] = p.actor_id;
-            firstFRTs[p.contact_id] = new Date(p.occurred_at).getTime();
+          if (!priorFRActor[p.contact_id]) {
+            priorFRActor[p.contact_id] = p.actor_id;
           }
-          const list = frTouchers[p.contact_id] = frTouchers[p.contact_id] || [];
-          if (!list.includes(p.actor_id)) list.push(p.actor_id);
         }
       }
 
@@ -954,6 +954,12 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
                 firstResponses.push({ actor_id: e.actor_id, contact_id: e.contact_id, seconds: frSec, at: e.occurred_at });
               }
               (frTouchers[e.contact_id] = frTouchers[e.contact_id] || []).push(e.actor_id);
+              // Kalau contact ini sudah pernah dibalas FR lain SEBELUM rentang,
+              // reply pertama in-range dari FR berbeda tetap dihitung sbg continue.
+              const prior = priorFRActor[e.contact_id];
+              if (prior && prior !== e.actor_id) {
+                markContinueFromFR(e.contact_id, e.actor_id, prior, e.occurred_at, "chat_out");
+              }
             } else if (firstFRActor[e.contact_id] !== e.actor_id) {
               markContinueFromFR(e.contact_id, e.actor_id, firstFRActor[e.contact_id], e.occurred_at, "chat_out");
             }
@@ -988,9 +994,10 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         const c = ensureFR(closerId);
         c.closings++;
 
+        const seedActor = firstFRActor[inv.contact_id] || priorFRActor[inv.contact_id];
         const touchers = (frTouchers[inv.contact_id] && frTouchers[inv.contact_id].length)
           ? frTouchers[inv.contact_id].slice()
-          : (firstFRActor[inv.contact_id] ? [firstFRActor[inv.contact_id]] : [closerId]);
+          : (seedActor ? [seedActor] : [closerId]);
         if (!touchers.includes(closerId)) touchers.push(closerId);
 
         if (touchers.length > 1) {
@@ -1219,7 +1226,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
     <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPI icon={MessageCircle} label="Total First Response" value={data.totalFirst} color="text-emerald-500"
-          hint="Lead baru yang first-reply-nya jatuh DI rentang tanggal ini. Lead yang sudah pernah dibalas FR sebelum rentang tidak dihitung di sini (masuk Continue)."
+          hint="Jumlah lead yang mendapat first-reply FR DI rentang tanggal ini. Skalanya ikut rentang: rentang lebih panjang = angka lebih besar."
           onClick={() => setDrill({ kind: "first" })} />
         <KPI icon={ArrowRightLeft} label="Continue Conversation" value={data.totalContinue} color="text-amber-500"
           hint="FR melanjutkan chat yang sebelumnya dipegang FR lain (reply, take-over, atau reassign). Termasuk lead lama yang first-responnya di luar rentang."
