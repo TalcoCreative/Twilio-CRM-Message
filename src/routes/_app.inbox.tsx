@@ -1202,6 +1202,11 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                           </button>
                         </PopoverContent>
                       </Popover>
+                      <Button type="button" size="sm" variant="outline" onClick={sendFollowUp} disabled={sendingFollowUp}
+                        className="h-8 shrink-0 gap-1.5 text-[11px]" title="Kirim template Follow Up">
+                        {sendingFollowUp ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                        <span className="hidden sm:inline">Follow Up</span>
+                      </Button>
                     </>
                   )}
                 </div>
