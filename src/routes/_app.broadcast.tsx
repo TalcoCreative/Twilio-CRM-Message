@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Send, Filter, Users as UsersIcon, Search } from "lucide-react";
+import { Loader2, Send, Filter, Users as UsersIcon, Search, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_app/broadcast")({
   head: () => ({ meta: [{ title: "Broadcast — Husada CRM" }] }),
@@ -30,6 +30,8 @@ function BroadcastPage() {
   const [stages, setStages] = useState<{ id: string; name: string; color: string }[]>([]);
   const [agents, setAgents] = useState<{ id: string; full_name: string | null; email: string | null }[]>([]);
 
+  const [openWindowIds, setOpenWindowIds] = useState<Set<string>>(new Set());
+
   const [productId, setProductId] = useState<string>(ALL);
   const [stageId, setStageId] = useState<string>(ALL);
   const [agentId, setAgentId] = useState<string>(ALL);
@@ -42,7 +44,8 @@ function BroadcastPage() {
 
   useEffect(() => {
     (async () => {
-      const [{ data: c }, { data: p }, { data: s }, { data: a }] = await Promise.all([
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const [{ data: c }, { data: p }, { data: s }, { data: a }, { data: m }] = await Promise.all([
         supabase.from("contacts")
           .select("id, full_name, whatsapp_number, stage_id, interested_product_id, assigned_agent_id")
           .order("last_interaction_at", { ascending: false, nullsFirst: false })
@@ -50,11 +53,22 @@ function BroadcastPage() {
         supabase.from("products").select("id,name").eq("is_active", true).order("sort_order"),
         supabase.from("stages").select("id,name,color").order("order_index"),
         supabase.from("profiles").select("id, full_name, email").order("full_name"),
+        supabase.from("messages")
+          .select("conversation:conversations!inner(contact_id)")
+          .eq("direction", "INBOUND")
+          .gte("sent_at", since)
+          .limit(5000),
       ]);
       setContacts((c as Contact[]) || []);
       setProducts(p || []);
       setStages(s || []);
       setAgents(a || []);
+      const set = new Set<string>();
+      for (const row of (m as any[]) || []) {
+        const cid = row?.conversation?.contact_id;
+        if (cid) set.add(cid);
+      }
+      setOpenWindowIds(set);
       setLoading(false);
     })();
   }, []);
@@ -62,6 +76,7 @@ function BroadcastPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return contacts.filter((c) => {
+      if (!openWindowIds.has(c.id)) return false;
       if (productId !== ALL && c.interested_product_id !== productId) return false;
       if (stageId !== ALL && c.stage_id !== stageId) return false;
       if (agentId !== ALL) {
@@ -73,9 +88,13 @@ function BroadcastPage() {
       }
       return true;
     });
-  }, [contacts, productId, stageId, agentId, query]);
+  }, [contacts, openWindowIds, productId, stageId, agentId, query]);
 
   function toggle(id: string) {
+    if (!openWindowIds.has(id)) {
+      toast.error("Fitur belum bisa digunakan untuk broadcast message — window 24 jam kontak ini sudah tertutup.");
+      return;
+    }
     setSelected((s) => {
       const next = new Set(s);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -87,11 +106,19 @@ function BroadcastPage() {
 
   async function send() {
     if (!message.trim() || selected.size === 0) { toast.error("Pilih kontak & isi pesan"); return; }
-    if (!confirm(`Kirim broadcast ke ${selected.size} kontak?`)) return;
+    const eligible = [...selected].filter((id) => openWindowIds.has(id));
+    if (eligible.length === 0) {
+      toast.error("Fitur belum bisa digunakan untuk broadcast message — tidak ada kontak dalam window 24 jam.");
+      return;
+    }
+    if (eligible.length < selected.size) {
+      toast.warning(`${selected.size - eligible.length} kontak dilewati karena window 24 jam sudah tertutup.`);
+    }
+    if (!confirm(`Kirim broadcast ke ${eligible.length} kontak?`)) return;
     setSending(true);
     const { data: { session } } = await supabase.auth.getSession();
     let ok = 0, fail = 0;
-    for (const id of selected) {
+    for (const id of eligible) {
       const c = contacts.find((x) => x.id === id);
       if (!c) { fail++; continue; }
       let { data: conv } = await supabase.from("conversations").select("id").eq("contact_id", id).eq("status", "OPEN").maybeSingle();
@@ -124,7 +151,7 @@ function BroadcastPage() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Broadcast WhatsApp</h1>
-          <p className="text-sm text-muted-foreground">Kirim pesan terarah berdasarkan produk, stages, atau agent yang menangani.</p>
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5"><Clock className="size-3.5" /> Hanya kontak yang masih dalam window 24 jam WhatsApp yang bisa di-blast.</p>
         </div>
       </header>
 
@@ -175,7 +202,9 @@ function BroadcastPage() {
             <div className="max-h-[420px] overflow-auto border rounded-md divide-y">
               {loading && <div className="p-6 text-center text-sm text-muted-foreground">Memuat...</div>}
               {!loading && filtered.length === 0 && (
-                <div className="p-8 text-center text-sm text-muted-foreground">Tidak ada kontak yang cocok dengan filter.</div>
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  Fitur belum bisa digunakan untuk broadcast message. Tidak ada kontak yang masih dalam window 24 jam WhatsApp sesuai filter ini.
+                </div>
               )}
               {filtered.slice(0, 500).map((c) => {
                 const stage = stages.find((s) => s.id === c.stage_id);
