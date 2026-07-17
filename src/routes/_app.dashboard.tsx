@@ -891,7 +891,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
               }
               (frTouchers[e.contact_id] = frTouchers[e.contact_id] || []).push(e.actor_id);
             } else if (firstFRActor[e.contact_id] !== e.actor_id) {
-              markContinueFromFR(e.contact_id, e.actor_id, firstFRActor[e.contact_id]);
+              markContinueFromFR(e.contact_id, e.actor_id, firstFRActor[e.contact_id], e.occurred_at, "chat_out");
             }
             s.leadsHandledContactIds.add(e.contact_id);
 
