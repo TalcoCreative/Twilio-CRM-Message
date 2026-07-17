@@ -918,6 +918,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       // - Total Closing hanya untuk pembuat invitation (from_user_id).
       // - Closing Share hanya dibagi kalau >1 unique FR handle sebelum invitation.
       //   Solo handler → tidak ada share sama sekali (sudah dapat Total Closing).
+      const closingDetails: { contact_id: string; closer_id: string; touchers: string[]; at: string; to_user_id: string | null }[] = [];
       for (const inv of closingInvs) {
         const closerId = inv.from_user_id;
         const c = ensureFR(closerId);
@@ -939,6 +940,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           const handleSec = Math.round((respondedTs - firstTs) / 1000);
           touchers.forEach((tid) => { ensureFR(tid).handleSecList.push(handleSec); });
         }
+        closingDetails.push({ contact_id: inv.contact_id, closer_id: closerId, touchers: touchers.slice(), at: inv.responded_at || inv.created_at, to_user_id: inv.to_user_id || null });
       }
 
 
