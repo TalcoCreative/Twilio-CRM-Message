@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Send, Filter, Users as UsersIcon, Search } from "lucide-react";
+import { Loader2, Send, Filter, Users as UsersIcon, Search, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_app/broadcast")({
   head: () => ({ meta: [{ title: "Broadcast — Husada CRM" }] }),
