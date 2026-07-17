@@ -553,7 +553,48 @@ function LeadDetailDialog({ contact, stages, products, agents, contentCodes, onC
             </Select>
           </div>
           <div className="space-y-1.5"><Label>Estimated Revenue (Rp)</Label><Input type="number" value={form.estimated_revenue || 0} onChange={(e) => setForm({ ...form, estimated_revenue: e.target.value })} /></div>
-          <div className="space-y-1.5"><Label>Source</Label><Input value={form.source || ""} onChange={(e) => setForm({ ...form, source: e.target.value })} placeholder="Instagram Ads, Referral, Walk-in..." /></div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Source</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={form._source_type || "organik"} onValueChange={(v) => setForm({ ...form, _source_type: v })}>
+                <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="organik">Organik</SelectItem>
+                  <SelectItem value="ads">Ads</SelectItem>
+                </SelectContent>
+              </Select>
+              {form._source_type === "ads" ? (
+                <Select
+                  value={form.content_code_id || "none"}
+                  onValueChange={(v) => setForm({ ...form, content_code_id: v === "none" ? null : v })}
+                >
+                  <SelectTrigger className="flex-1 min-w-[200px]">
+                    <SelectValue placeholder="Pilih konten iklan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Belum dipilih —</SelectItem>
+                    {contentCodes.map((cc) => (
+                      <SelectItem key={cc.id} value={cc.id}>
+                        {cc.code}{cc.name ? ` — ${cc.name}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  className="flex-1 min-w-[200px]"
+                  value={form.source || ""}
+                  onChange={(e) => setForm({ ...form, source: e.target.value })}
+                  placeholder="Organik, Referral, Walk-in..."
+                />
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {form._source_type === "ads"
+                ? "Auto-terdeteksi dari workflow ads bila lead datang lewat kode konten."
+                : "Ubah ke Ads untuk memetakan lead ini ke salah satu konten iklan (A, B, C, dst)."}
+            </p>
+          </div>
           <div className="space-y-1.5"><Label>Link Dokumen Pendukung</Label><Input value={form.document_url || ""} onChange={(e) => setForm({ ...form, document_url: e.target.value })} placeholder="https://..." /></div>
           <div className="md:col-span-2 space-y-1.5"><Label>Keluhan / Pertanyaan</Label><Textarea rows={2} value={form.chief_complaint || ""} onChange={(e) => setForm({ ...form, chief_complaint: e.target.value })} /></div>
           <div className="md:col-span-2 space-y-1.5"><Label>Catatan</Label><Textarea rows={3} value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
