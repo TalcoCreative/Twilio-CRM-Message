@@ -1683,7 +1683,18 @@ function FRDrillDialog({ drill, data, onClose }: { drill: { kind: "first" | "con
     continue: { title: "Detail Continue Conversation", desc: "Setiap baris = 1 kali agent FR mengambil alih / melanjutkan lead yang sebelumnya dipegang FR lain." },
     closing: { title: "Detail Total Closing", desc: "Invitation dari FR yang diterima agent non-FR. Dihitung untuk pengirim invitation." },
     share: { title: "Detail Closing Share", desc: "Closing yang dibagi karena >1 FR menangani lead sebelum invitation dikirim." },
+    invSent: { title: "Detail Invitation Dikirim", desc: "Semua invitation yang dikirim FR pada rentang ini, apapun statusnya." },
+    invAccepted: { title: "Detail Invitation Diterima (non-FR)", desc: "Invitation yang diterima agent di luar divisi FR — dihitung sebagai closing." },
+    invRejected: { title: "Detail Invitation Ditolak", desc: "Invitation yang ditolak oleh agent tujuan." },
+    invPending: { title: "Detail Invitation Pending", desc: "Invitation yang masih menunggu respon dari agent tujuan." },
   };
+
+  const invRow = (i: any, statusLabel: string) => ({
+    contact_id: i.contact_id,
+    primary: `${aname(i.from_user_id)} → ${aname(i.to_user_id)}`,
+    secondary: `${statusLabel}${i.responded_at ? ` · direspon ${fmtDT(i.responded_at)}` : ""}`,
+    at: i.responded_at || i.created_at,
+  });
 
   let rows: Array<{ contact_id: string; primary: string; secondary?: string; at: string }> = [];
   if (drill?.kind === "first") {
@@ -1714,6 +1725,14 @@ function FRDrillDialog({ drill, data, onClose }: { drill: { kind: "first" | "con
       secondary: d.touchers.map((t: string) => aname(t)).join(" · "),
       at: d.at,
     }));
+  } else if (drill?.kind === "invSent") {
+    rows = (data?.invSentDetails || []).map((i: any) => invRow(i, `Status: ${i.status}`));
+  } else if (drill?.kind === "invAccepted") {
+    rows = (data?.invAcceptedDetails || []).map((i: any) => invRow(i, "Diterima (non-FR)"));
+  } else if (drill?.kind === "invRejected") {
+    rows = (data?.invRejectedDetails || []).map((i: any) => invRow(i, "Ditolak"));
+  } else if (drill?.kind === "invPending") {
+    rows = (data?.invPendingDetails || []).map((i: any) => invRow(i, "Menunggu respon"));
   }
 
   rows = rows.slice().sort((a, b) => (a.at < b.at ? 1 : -1));
