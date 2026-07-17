@@ -539,6 +539,39 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         </Card>
       </div>
 
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card className="glow-soft">
+          <CardHeader><CardTitle className="text-base">Distribusi Produk</CardTitle>
+            <p className="text-xs text-muted-foreground">Sebaran leads berdasarkan produk yang diminati (dari katalog produk).</p>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={data?.productDist || []} dataKey="count" nameKey="name" innerRadius={45} outerRadius={80} paddingAngle={2}>
+                  {(data?.productDist || []).map((p: any, i: number) => (
+                    <Cell key={i} fill={p.color} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} wrapperStyle={tooltipWrapperStyle} cursor={tooltipCursor} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-1 mt-2 max-h-40 overflow-auto">
+              {(data?.productDist || []).map((p: any) => (
+                <div key={p.name} className="flex items-center gap-2 text-xs">
+                  <div className="size-2 rounded-full shrink-0" style={{ background: p.color }} />
+                  <span className="flex-1 truncate">{p.name}</span>
+                  <span className="font-semibold tabular-nums">{p.count}</span>
+                </div>
+              ))}
+              {(!data?.productDist || data.productDist.length === 0) && (
+                <p className="text-xs text-muted-foreground">Belum ada data produk.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+
       {/* Distribusi Waktu Respon — INFOGRAPHIC */}
       <Card className="glow-soft">
         <CardHeader>
