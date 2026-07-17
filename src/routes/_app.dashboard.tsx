@@ -216,8 +216,8 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
     (async () => {
       const startDate = localDateKey(new Date(startISO));
       const endDate = localDateKey(new Date(endISO));
-      const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes] = await Promise.all([
-        supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, assigned_agent_id, created_at, stages(name, color)"),
+      const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes, productsRes] = await Promise.all([
+        supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, stages(name, color)"),
         supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN"),
         supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO),
         supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
@@ -230,7 +230,11 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         supabase.from("agent_shifts").select("agent_id, shifts(start_time, end_time, days_of_week, is_active)"),
         supabase.from("fr_date_shifts" as any).select("agent_id, work_date, start_time, end_time")
           .gte("work_date", startDate).lte("work_date", endDate),
+        supabase.from("products").select("id, name").order("sort_order"),
       ]);
+      const productList = (productsRes.data || []) as any[];
+      const productMap: Record<string, string> = {};
+      productList.forEach((p: any) => { productMap[p.id] = p.name; });
 
       const allContacts = (contacts.data || []) as any[];
       const openConvsAll = (openConv.data || []) as any[];
