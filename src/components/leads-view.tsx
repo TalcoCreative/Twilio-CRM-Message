@@ -319,12 +319,12 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
                     onCheckedChange={() => toggleAll(filtered.map((c) => c.id))}
                   />
                 </th>
-                <th className="text-left p-3 font-medium">Nama</th>
-                <th className="text-left p-3 font-medium">No WhatsApp</th>
-                <th className="text-left p-3 font-medium">Produk</th>
-                <th className="text-left p-3 font-medium">Stage</th>
-                <th className="text-right p-3 font-medium">Est. Revenue</th>
-                <th className="text-left p-3 font-medium">Source</th>
+                <SortableTh label="Nama" k="full_name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="No WhatsApp" k="whatsapp_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="Produk" k="product" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="Stage" k="stage" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="Est. Revenue" k="estimated_revenue" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
+                <SortableTh label="Source" k="source" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               </tr>
             </thead>
             <tbody>
