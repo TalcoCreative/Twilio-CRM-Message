@@ -88,11 +88,12 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   }
 
   async function load() {
-    const [c, s, p, pr] = await Promise.all([
+    const [c, s, p, pr, cc] = await Promise.all([
       supabase.from("contacts").select("*, stages(name, color), conversations(assigned_agent_id)").order("created_at", { ascending: false }),
       supabase.from("stages").select("*").order("order_index"),
       supabase.from("products").select("id, name").order("sort_order"),
       supabase.from("profiles").select("id, full_name, email"),
+      supabase.from("content_codes").select("id, code, name, is_active").eq("is_active", true).order("code"),
     ]);
     let list = ((c.data as any) || []).map((row: any) => ({
       ...row,
@@ -103,6 +104,7 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
     setStages((s.data as any) || []);
     setProducts((p.data as any) || []);
     setAgents((pr.data as any) || []);
+    setContentCodes((cc.data as any) || []);
   }
   useEffect(() => { load(); }, [mineOnly, user?.id]);
 
