@@ -1244,18 +1244,25 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         .sort((a, b) => b.closings - a.closings || b.slaPct - a.slaPct)
         .slice(0, 10);
 
-      // Invitation KPIs — filter dari FR, opsional per agent tertentu.
-      const invScoped = invSent.filter((i) => {
+      // Invitation KPIs — Dikirim/Pending pakai created_at; Diterima/Ditolak pakai responded_at
+      // supaya konsisten dengan Total Closing (yang juga pakai responded_at).
+      const invSentScoped = invSent.filter((i) => {
         if (!frUserIds.has(i.from_user_id)) return false;
         if (selectedAgent && i.from_user_id !== selectedAgent) return false;
         return true;
       });
-      const invSentTotal = invScoped.length;
-      const invAcceptedNonFR = invScoped.filter(
+      const invRespondedScoped = invResponded.filter((i) => {
+        if (!frUserIds.has(i.from_user_id)) return false;
+        if (selectedAgent && i.from_user_id !== selectedAgent) return false;
+        return true;
+      });
+      const invSentTotal = invSentScoped.length;
+      const invAcceptedNonFR = invRespondedScoped.filter(
         (i) => i.status === "accepted" && !frUserIds.has(i.to_user_id),
       ).length;
-      const invRejected = invScoped.filter((i) => i.status === "rejected").length;
-      const invPending = invScoped.filter((i) => i.status === "pending").length;
+      const invRejected = invRespondedScoped.filter((i) => i.status === "rejected").length;
+      const invPending = invSentScoped.filter((i) => i.status === "pending").length;
+
 
       // Scope details by selectedAgent for drill-down.
       const scopedFirstDetails = selectedAgent
