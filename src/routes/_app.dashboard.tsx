@@ -1110,12 +1110,29 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const invRejected = invScoped.filter((i) => i.status === "rejected").length;
       const invPending = invScoped.filter((i) => i.status === "pending").length;
 
+      // Scope details by selectedAgent for drill-down.
+      const scopedFirstDetails = selectedAgent
+        ? firstResponses.filter((r) => r.actor_id === selectedAgent)
+        : firstResponses.filter((r) => frUserIds.has(r.actor_id));
+      const scopedContinueDetails = selectedAgent
+        ? continueDetails.filter((d) => d.actor_id === selectedAgent)
+        : continueDetails.filter((d) => frUserIds.has(d.actor_id));
+      const scopedClosingDetails = selectedAgent
+        ? closingDetails.filter((d) => d.closer_id === selectedAgent)
+        : closingDetails.filter((d) => frUserIds.has(d.closer_id));
+      const scopedShareDetails = selectedAgent
+        ? closingDetails.filter((d) => d.touchers.length > 1 && d.touchers.includes(selectedAgent))
+        : closingDetails.filter((d) => d.touchers.length > 1);
+
       setData({
         newLeads, answered: answeredContacts.size, totalResp, avgSec,
         avgFirstRespSec, unresponded, slaCount, slaPct, hourBuckets,
         totalFirst, totalContinue, totalClosing, totalShare, avgHandle,
         hourlyData, trend, leaderboard, frAgents,
         invSentTotal, invAcceptedNonFR, invRejected, invPending,
+        firstDetails: scopedFirstDetails, continueDetails: scopedContinueDetails,
+        closingDetails: scopedClosingDetails, shareDetails: scopedShareDetails,
+        nameById, contactById,
       });
     })();
   }, [startISO, endISO, slaGreen, slaYellow, profiles, selectedAgent, frUserIds]);
