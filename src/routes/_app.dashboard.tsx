@@ -1226,7 +1226,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
     <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPI icon={MessageCircle} label="Total First Response" value={data.totalFirst} color="text-emerald-500"
-          hint="Lead baru yang first-reply-nya jatuh DI rentang tanggal ini. Lead yang sudah pernah dibalas FR sebelum rentang tidak dihitung di sini (masuk Continue)."
+          hint="Jumlah lead yang mendapat first-reply FR DI rentang tanggal ini. Skalanya ikut rentang: rentang lebih panjang = angka lebih besar."
           onClick={() => setDrill({ kind: "first" })} />
         <KPI icon={ArrowRightLeft} label="Continue Conversation" value={data.totalContinue} color="text-amber-500"
           hint="FR melanjutkan chat yang sebelumnya dipegang FR lain (reply, take-over, atau reassign). Termasuk lead lama yang first-responnya di luar rentang."
