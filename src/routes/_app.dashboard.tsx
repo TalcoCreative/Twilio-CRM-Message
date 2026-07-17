@@ -760,7 +760,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           .eq("status", "accepted")
           .gte("responded_at", startISO).lte("responded_at", endISO),
         supabase.from("assignment_invitations")
-          .select("id, from_user_id, to_user_id, status, created_at")
+          .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
           .gte("created_at", startISO).lte("created_at", endISO),
         supabase.from("conversations")
           .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id"),
