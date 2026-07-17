@@ -342,6 +342,8 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       const scopedContacts = scopedContactIds ? allContacts.filter((c) => scopedContactIds.has(c.id)) : allContacts;
 
       const byStage: Record<string, { name: string; color: string; count: number }> = {};
+      const byProduct: Record<string, { name: string; color: string; count: number }> = {};
+      const PRODUCT_PALETTE = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#14b8a6","#f97316","#3b82f6","#84cc16","#a855f7","#22c55e","#eab308","#f43f5e"];
       let totalRevenue = 0;
       scopedContacts.forEach((r: any) => {
         const name = r.stages?.name || "Tanpa stage";
@@ -349,8 +351,14 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         byStage[name] = byStage[name] || { name, color, count: 0 };
         byStage[name].count++;
         totalRevenue += Number(r.estimated_revenue) || 0;
+        const pname = r.interested_product_id ? (productMap[r.interested_product_id] || "Produk lain") : "Tanpa produk";
+        byProduct[pname] = byProduct[pname] || { name: pname, color: "", count: 0 };
+        byProduct[pname].count++;
       });
       const stageDist = Object.values(byStage).sort((a, b) => b.count - a.count);
+      const productDist = Object.values(byProduct)
+        .sort((a, b) => b.count - a.count)
+        .map((p, i) => ({ ...p, color: p.name === "Tanpa produk" ? "#888" : PRODUCT_PALETTE[i % PRODUCT_PALETTE.length] }));
       const topStage = stageDist[0];
 
       // Volume Pesan Harian: seluruh bubble (tidak di-scope).
