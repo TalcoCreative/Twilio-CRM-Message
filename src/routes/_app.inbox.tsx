@@ -848,7 +848,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   </div>
 
                   {/* Desktop quick actions */}
-                  <div className="hidden md:flex items-center gap-2 flex-wrap">
+                  <div className="hidden lg:flex items-center gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5">
                       <Tag className="size-3.5 text-muted-foreground" />
                       <Select value={active.contact?.stage_id || ""} onValueChange={changeStage}>
@@ -893,7 +893,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   {/* Mobile actions menu */}
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button size="icon" variant="ghost" className="md:hidden h-9 w-9 shrink-0">
+                      <Button size="icon" variant="ghost" className="lg:hidden h-9 w-9 shrink-0">
                         <MoreVertical className="size-4" />
                       </Button>
                     </PopoverTrigger>
