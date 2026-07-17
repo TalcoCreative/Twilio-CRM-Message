@@ -216,8 +216,8 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
     (async () => {
       const startDate = localDateKey(new Date(startISO));
       const endDate = localDateKey(new Date(endISO));
-      const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes] = await Promise.all([
-        supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, assigned_agent_id, created_at, stages(name, color)"),
+      const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes, productsRes] = await Promise.all([
+        supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, stages(name, color)"),
         supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN"),
         supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO),
         supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
@@ -230,7 +230,11 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         supabase.from("agent_shifts").select("agent_id, shifts(start_time, end_time, days_of_week, is_active)"),
         supabase.from("fr_date_shifts" as any).select("agent_id, work_date, start_time, end_time")
           .gte("work_date", startDate).lte("work_date", endDate),
+        supabase.from("products").select("id, name").order("sort_order"),
       ]);
+      const productList = (productsRes.data || []) as any[];
+      const productMap: Record<string, string> = {};
+      productList.forEach((p: any) => { productMap[p.id] = p.name; });
 
       const allContacts = (contacts.data || []) as any[];
       const openConvsAll = (openConv.data || []) as any[];
@@ -338,6 +342,8 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       const scopedContacts = scopedContactIds ? allContacts.filter((c) => scopedContactIds.has(c.id)) : allContacts;
 
       const byStage: Record<string, { name: string; color: string; count: number }> = {};
+      const byProduct: Record<string, { name: string; color: string; count: number }> = {};
+      const PRODUCT_PALETTE = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#14b8a6","#f97316","#3b82f6","#84cc16","#a855f7","#22c55e","#eab308","#f43f5e"];
       let totalRevenue = 0;
       scopedContacts.forEach((r: any) => {
         const name = r.stages?.name || "Tanpa stage";
@@ -345,8 +351,14 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         byStage[name] = byStage[name] || { name, color, count: 0 };
         byStage[name].count++;
         totalRevenue += Number(r.estimated_revenue) || 0;
+        const pname = r.interested_product_id ? (productMap[r.interested_product_id] || "Produk lain") : "Tanpa produk";
+        byProduct[pname] = byProduct[pname] || { name: pname, color: "", count: 0 };
+        byProduct[pname].count++;
       });
       const stageDist = Object.values(byStage).sort((a, b) => b.count - a.count);
+      const productDist = Object.values(byProduct)
+        .sort((a, b) => b.count - a.count)
+        .map((p, i) => ({ ...p, color: p.name === "Tanpa produk" ? "#888" : PRODUCT_PALETTE[i % PRODUCT_PALETTE.length] }));
       const topStage = stageDist[0];
 
       // Volume Pesan Harian: seluruh bubble (tidak di-scope).
@@ -454,7 +466,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         totalContacts: allContacts.length,               // Total Leads = seluruh /leads
         openConv: openConvsAll.length,                   // Percakapan Aktif = seluruh open
         messagesRange: (msgsList.data || []).length,     // Pesan = seluruh bubble di rentang
-        teamAvg, agentStats, stageDist, topStage, totalRevenue,
+        teamAvg, agentStats, stageDist, productDist, topStage, totalRevenue,
         myInbox, dailySeries, transitions,
         agentLeadStats, contactMap, buckets,
       });
@@ -526,6 +538,39 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
           </CardContent>
         </Card>
       </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card className="glow-soft">
+          <CardHeader><CardTitle className="text-base">Distribusi Produk</CardTitle>
+            <p className="text-xs text-muted-foreground">Sebaran leads berdasarkan produk yang diminati (dari katalog produk).</p>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={data?.productDist || []} dataKey="count" nameKey="name" innerRadius={45} outerRadius={80} paddingAngle={2}>
+                  {(data?.productDist || []).map((p: any, i: number) => (
+                    <Cell key={i} fill={p.color} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} wrapperStyle={tooltipWrapperStyle} cursor={tooltipCursor} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-1 mt-2 max-h-40 overflow-auto">
+              {(data?.productDist || []).map((p: any) => (
+                <div key={p.name} className="flex items-center gap-2 text-xs">
+                  <div className="size-2 rounded-full shrink-0" style={{ background: p.color }} />
+                  <span className="flex-1 truncate">{p.name}</span>
+                  <span className="font-semibold tabular-nums">{p.count}</span>
+                </div>
+              ))}
+              {(!data?.productDist || data.productDist.length === 0) && (
+                <p className="text-xs text-muted-foreground">Belum ada data produk.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
 
       {/* Distribusi Waktu Respon — INFOGRAPHIC */}
       <Card className="glow-soft">

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
-import { Plus, Search, Download, Upload, FileDown, MessageSquare, History, ArrowRight, Trash2 } from "lucide-react";
+import { Plus, Search, Download, Upload, FileDown, MessageSquare, History, ArrowRight, Trash2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -21,14 +21,19 @@ import { useAuth } from "@/hooks/use-auth";
 type Stage = { id: string; name: string; color: string; is_default?: boolean };
 type Product = { id: string; name: string };
 type Profile = { id: string; full_name: string | null; email: string };
+type ContentCode = { id: string; code: string; name: string; is_active: boolean };
 type Contact = {
   id: string; whatsapp_number: string; full_name: string | null;
   domicile: string | null; stage_id: string | null; created_at: string;
   interested_product_id: string | null; estimated_revenue: number | null;
   source: string | null; notes: string | null; document_url: string | null;
   chief_complaint: string | null; assigned_agent_id?: string | null;
+  content_code_id?: string | null;
   stages?: { name: string; color: string };
 };
+
+type SortKey = "full_name" | "whatsapp_number" | "product" | "stage" | "source" | "estimated_revenue" | "created_at";
+type SortDir = "asc" | "desc";
 
 export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   const { user } = useAuth();
@@ -36,12 +41,20 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   const [stages, setStages] = useState<Stage[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [agents, setAgents] = useState<Profile[]>([]);
+  const [contentCodes, setContentCodes] = useState<ContentCode[]>([]);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [openNew, setOpenNew] = useState(false);
   const [selected, setSelected] = useState<Contact | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [form, setForm] = useState({ whatsapp_number: "", full_name: "", domicile: "", notes: "" });
+  const [sortKey, setSortKey] = useState<SortKey>("created_at");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  function toggleSort(k: SortKey) {
+    if (sortKey === k) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else { setSortKey(k); setSortDir("asc"); }
+  }
 
   function toggleCheck(id: string) {
     setCheckedIds((prev) => {
@@ -75,11 +88,12 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   }
 
   async function load() {
-    const [c, s, p, pr] = await Promise.all([
+    const [c, s, p, pr, cc] = await Promise.all([
       supabase.from("contacts").select("*, stages(name, color), conversations(assigned_agent_id)").order("created_at", { ascending: false }),
       supabase.from("stages").select("*").order("order_index"),
       supabase.from("products").select("id, name").order("sort_order"),
       supabase.from("profiles").select("id, full_name, email"),
+      supabase.from("content_codes").select("id, code, name, is_active").eq("is_active", true).order("code"),
     ]);
     let list = ((c.data as any) || []).map((row: any) => ({
       ...row,
@@ -90,6 +104,7 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
     setStages((s.data as any) || []);
     setProducts((p.data as any) || []);
     setAgents((pr.data as any) || []);
+    setContentCodes((cc.data as any) || []);
   }
   useEffect(() => { load(); }, [mineOnly, user?.id]);
 
@@ -101,11 +116,33 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
     return () => { supabase.removeChannel(ch); };
   }, [mineOnly, user?.id]);
 
+  const productNameById = (id: string | null) => (id ? products.find((p) => p.id === id)?.name || "" : "");
+  const stageOrder: Record<string, number> = {};
+  stages.forEach((s, i) => { stageOrder[s.id] = i; });
+
   const filtered = contacts.filter((c) => {
     const q = search.toLowerCase();
     const matchQ = !q || c.full_name?.toLowerCase().includes(q) || c.whatsapp_number.includes(q);
     const matchS = stageFilter === "all" || c.stage_id === stageFilter;
     return matchQ && matchS;
+  }).sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (x: any, y: any) => {
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      if (typeof x === "number" && typeof y === "number") return (x - y) * dir;
+      return String(x).localeCompare(String(y), "id", { sensitivity: "base" }) * dir;
+    };
+    switch (sortKey) {
+      case "full_name": return cmp(a.full_name, b.full_name);
+      case "whatsapp_number": return cmp(a.whatsapp_number, b.whatsapp_number);
+      case "product": return cmp(productNameById(a.interested_product_id), productNameById(b.interested_product_id));
+      case "stage": return cmp(a.stage_id ? stageOrder[a.stage_id] ?? 999 : 999, b.stage_id ? stageOrder[b.stage_id] ?? 999 : 999);
+      case "source": return cmp(a.source, b.source);
+      case "estimated_revenue": return cmp(Number(a.estimated_revenue || 0), Number(b.estimated_revenue || 0));
+      case "created_at": return cmp(new Date(a.created_at).getTime(), new Date(b.created_at).getTime());
+    }
   });
 
   const totalRevenue = filtered.reduce((s, c) => s + (Number(c.estimated_revenue) || 0), 0);
@@ -282,12 +319,12 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
                     onCheckedChange={() => toggleAll(filtered.map((c) => c.id))}
                   />
                 </th>
-                <th className="text-left p-3 font-medium">Nama</th>
-                <th className="text-left p-3 font-medium">No WhatsApp</th>
-                <th className="text-left p-3 font-medium">Produk</th>
-                <th className="text-left p-3 font-medium">Stage</th>
-                <th className="text-right p-3 font-medium">Est. Revenue</th>
-                <th className="text-left p-3 font-medium">Source</th>
+                <SortableTh label="Nama" k="full_name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="No WhatsApp" k="whatsapp_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="Produk" k="product" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="Stage" k="stage" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="Est. Revenue" k="estimated_revenue" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
+                <SortableTh label="Source" k="source" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               </tr>
             </thead>
             <tbody>
@@ -319,6 +356,7 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
         stages={stages}
         products={products}
         agents={agents}
+        contentCodes={contentCodes}
         onClose={() => setSelected(null)}
         onDelete={(id) => deleteContacts([id])}
         onSaved={() => { load(); setSelected(null); }}
@@ -327,8 +365,29 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   );
 }
 
-function LeadDetailDialog({ contact, stages, products, agents, onClose, onSaved, onDelete }: {
+function SortableTh({ label, k, sortKey, sortDir, onSort, align }: {
+  label: string; k: SortKey; sortKey: SortKey; sortDir: SortDir;
+  onSort: (k: SortKey) => void; align?: "left" | "right";
+}) {
+  const active = sortKey === k;
+  const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th className={`p-3 font-medium ${align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${active ? "text-foreground" : ""}`}
+      >
+        {label}
+        <Icon className="size-3" />
+      </button>
+    </th>
+  );
+}
+
+function LeadDetailDialog({ contact, stages, products, agents, contentCodes, onClose, onSaved, onDelete }: {
   contact: Contact | null; stages: Stage[]; products: Product[]; agents: Profile[];
+  contentCodes: ContentCode[];
   onClose: () => void; onSaved: () => void; onDelete: (id: string) => void;
 }) {
   const navigate = useNavigate();
@@ -337,7 +396,13 @@ function LeadDetailDialog({ contact, stages, products, agents, onClose, onSaved,
   const [profMap, setProfMap] = useState<Record<string, any>>({});
   const [opening, setOpening] = useState(false);
 
-  useEffect(() => { setForm(contact ? { ...contact } : null); }, [contact]);
+  useEffect(() => {
+    if (!contact) { setForm(null); return; }
+    // Auto-detect: kalau contact sudah punya content_code_id (misal ke-tag oleh workflow ads),
+    // atau source-nya diawali "Ads", tipe default = Ads. Selain itu = Organik.
+    const looksAds = !!contact.content_code_id || (contact.source || "").toLowerCase().startsWith("ads");
+    setForm({ ...contact, _source_type: looksAds ? "ads" : "organik" });
+  }, [contact]);
 
   useEffect(() => {
     if (!contact) return;
@@ -381,6 +446,11 @@ function LeadDetailDialog({ contact, stages, products, agents, onClose, onSaved,
   if (!contact || !form) return null;
 
   async function save() {
+    const isAds = form._source_type === "ads";
+    const codeRec = isAds && form.content_code_id ? contentCodes.find((c) => c.id === form.content_code_id) : null;
+    const finalSource = isAds
+      ? (codeRec ? `Ads: ${codeRec.code}${codeRec.name ? " — " + codeRec.name : ""}` : "Ads")
+      : (form.source && !form.source.toLowerCase().startsWith("ads") ? form.source : "Organik");
     const { error } = await supabase.from("contacts").update({
       full_name: form.full_name,
       whatsapp_number: form.whatsapp_number,
@@ -388,7 +458,8 @@ function LeadDetailDialog({ contact, stages, products, agents, onClose, onSaved,
       stage_id: form.stage_id,
       interested_product_id: form.interested_product_id || null,
       estimated_revenue: Number(form.estimated_revenue) || 0,
-      source: form.source,
+      source: finalSource,
+      content_code_id: isAds ? (form.content_code_id || null) : null,
       notes: form.notes,
       document_url: form.document_url,
       chief_complaint: form.chief_complaint,
@@ -482,7 +553,48 @@ function LeadDetailDialog({ contact, stages, products, agents, onClose, onSaved,
             </Select>
           </div>
           <div className="space-y-1.5"><Label>Estimated Revenue (Rp)</Label><Input type="number" value={form.estimated_revenue || 0} onChange={(e) => setForm({ ...form, estimated_revenue: e.target.value })} /></div>
-          <div className="space-y-1.5"><Label>Source</Label><Input value={form.source || ""} onChange={(e) => setForm({ ...form, source: e.target.value })} placeholder="Instagram Ads, Referral, Walk-in..." /></div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Source</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={form._source_type || "organik"} onValueChange={(v) => setForm({ ...form, _source_type: v })}>
+                <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="organik">Organik</SelectItem>
+                  <SelectItem value="ads">Ads</SelectItem>
+                </SelectContent>
+              </Select>
+              {form._source_type === "ads" ? (
+                <Select
+                  value={form.content_code_id || "none"}
+                  onValueChange={(v) => setForm({ ...form, content_code_id: v === "none" ? null : v })}
+                >
+                  <SelectTrigger className="flex-1 min-w-[200px]">
+                    <SelectValue placeholder="Pilih konten iklan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Belum dipilih —</SelectItem>
+                    {contentCodes.map((cc) => (
+                      <SelectItem key={cc.id} value={cc.id}>
+                        {cc.code}{cc.name ? ` — ${cc.name}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  className="flex-1 min-w-[200px]"
+                  value={form.source || ""}
+                  onChange={(e) => setForm({ ...form, source: e.target.value })}
+                  placeholder="Organik, Referral, Walk-in..."
+                />
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {form._source_type === "ads"
+                ? "Auto-terdeteksi dari workflow ads bila lead datang lewat kode konten."
+                : "Ubah ke Ads untuk memetakan lead ini ke salah satu konten iklan (A, B, C, dst)."}
+            </p>
+          </div>
           <div className="space-y-1.5"><Label>Link Dokumen Pendukung</Label><Input value={form.document_url || ""} onChange={(e) => setForm({ ...form, document_url: e.target.value })} placeholder="https://..." /></div>
           <div className="md:col-span-2 space-y-1.5"><Label>Keluhan / Pertanyaan</Label><Textarea rows={2} value={form.chief_complaint || ""} onChange={(e) => setForm({ ...form, chief_complaint: e.target.value })} /></div>
           <div className="md:col-span-2 space-y-1.5"><Label>Catatan</Label><Textarea rows={3} value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
