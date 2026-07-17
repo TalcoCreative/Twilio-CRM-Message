@@ -116,11 +116,33 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
     return () => { supabase.removeChannel(ch); };
   }, [mineOnly, user?.id]);
 
+  const productNameById = (id: string | null) => (id ? products.find((p) => p.id === id)?.name || "" : "");
+  const stageOrder: Record<string, number> = {};
+  stages.forEach((s, i) => { stageOrder[s.id] = i; });
+
   const filtered = contacts.filter((c) => {
     const q = search.toLowerCase();
     const matchQ = !q || c.full_name?.toLowerCase().includes(q) || c.whatsapp_number.includes(q);
     const matchS = stageFilter === "all" || c.stage_id === stageFilter;
     return matchQ && matchS;
+  }).sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (x: any, y: any) => {
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      if (typeof x === "number" && typeof y === "number") return (x - y) * dir;
+      return String(x).localeCompare(String(y), "id", { sensitivity: "base" }) * dir;
+    };
+    switch (sortKey) {
+      case "full_name": return cmp(a.full_name, b.full_name);
+      case "whatsapp_number": return cmp(a.whatsapp_number, b.whatsapp_number);
+      case "product": return cmp(productNameById(a.interested_product_id), productNameById(b.interested_product_id));
+      case "stage": return cmp(a.stage_id ? stageOrder[a.stage_id] ?? 999 : 999, b.stage_id ? stageOrder[b.stage_id] ?? 999 : 999);
+      case "source": return cmp(a.source, b.source);
+      case "estimated_revenue": return cmp(Number(a.estimated_revenue || 0), Number(b.estimated_revenue || 0));
+      case "created_at": return cmp(new Date(a.created_at).getTime(), new Date(b.created_at).getTime());
+    }
   });
 
   const totalRevenue = filtered.reduce((s, c) => s + (Number(c.estimated_revenue) || 0), 0);
