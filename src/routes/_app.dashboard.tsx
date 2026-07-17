@@ -1141,7 +1141,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
     })();
   }, [startISO, endISO, slaGreen, slaYellow, profiles, selectedAgent, frUserIds]);
 
-  const [drill, setDrill] = useState<{ kind: "first" | "continue" | "closing" | "share" } | null>(null);
+  const [drill, setDrill] = useState<{ kind: "first" | "continue" | "closing" | "share" | "invSent" | "invAccepted" | "invRejected" | "invPending" } | null>(null);
 
   if (!data) return <div className="text-muted-foreground py-10 text-center">Memuat...</div>;
   const fmtTime = (s: number) => !s ? "—" : s < 60 ? `${s}d` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}d` : `${Math.floor(s / 3600)}j ${Math.floor((s % 3600) / 60)}m`;
@@ -1664,7 +1664,7 @@ function KPI({ icon: Icon, label, value, color, hint, onClick }: any) {
   );
 }
 
-function FRDrillDialog({ drill, data, onClose }: { drill: { kind: "first" | "continue" | "closing" | "share" } | null; data: any; onClose: () => void }) {
+function FRDrillDialog({ drill, data, onClose }: { drill: { kind: "first" | "continue" | "closing" | "share" | "invSent" | "invAccepted" | "invRejected" | "invPending" } | null; data: any; onClose: () => void }) {
   const open = !!drill;
   const nameById: Record<string, string> = data?.nameById || {};
   const contactById: Record<string, any> = data?.contactById || {};
