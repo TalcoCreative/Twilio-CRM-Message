@@ -356,6 +356,7 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
         stages={stages}
         products={products}
         agents={agents}
+        contentCodes={contentCodes}
         onClose={() => setSelected(null)}
         onDelete={(id) => deleteContacts([id])}
         onSaved={() => { load(); setSelected(null); }}
