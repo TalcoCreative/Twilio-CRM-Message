@@ -24,10 +24,75 @@ export const Route = createFileRoute("/_app/dashboard")({
   component: DashboardGate,
 });
 
-// Bucket key pakai local time (WIB di sandbox/browser user), bukan UTC,
-// supaya konsisten dgn range startISO/endISO yang dihitung dari local midnight.
-const localDateKey = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// Dashboard CRM selalu memakai timezone bisnis Indonesia (WIB / Asia/Jakarta),
+// bukan timezone browser/server. Database tetap menyimpan timestamp UTC.
+const APP_TIME_ZONE = "Asia/Jakarta";
+const WIB_OFFSET_HOURS = 7;
+const appDateParts = new Intl.DateTimeFormat("en-CA", {
+  timeZone: APP_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const appHourParts = new Intl.DateTimeFormat("en-US", {
+  timeZone: APP_TIME_ZONE,
+  hour: "2-digit",
+  hourCycle: "h23",
+});
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const localDateKey = (d: Date) => {
+  const parts = appDateParts.formatToParts(d);
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  return `${y}-${m}-${day}`;
+};
+const appHour = (d: Date) => Number(appHourParts.formatToParts(d).find((p) => p.type === "hour")?.value || 0);
+const parseYmd = (key: string) => {
+  const [y, m, d] = key.split("-").map(Number);
+  return { y, m, d };
+};
+const formatUtcDateKey = (d: Date) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+const addDaysKey = (key: string, delta: number) => {
+  const { y, m, d } = parseYmd(key);
+  return formatUtcDateKey(new Date(Date.UTC(y, m - 1, d + delta)));
+};
+const diffDaysKey = (startKey: string, endKey: string) => {
+  const a = parseYmd(startKey);
+  const b = parseYmd(endKey);
+  return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86400000);
+};
+const enumerateDateKeys = (startKey: string, endKey: string) => {
+  const count = Math.max(0, diffDaysKey(startKey, endKey));
+  return Array.from({ length: count + 1 }, (_, i) => addDaysKey(startKey, i));
+};
+const dateKeyToWibMs = (key: string, hour = 0, minute = 0, second = 0, ms = 0) => {
+  const { y, m, d } = parseYmd(key);
+  return Date.UTC(y, m - 1, d, hour - WIB_OFFSET_HOURS, minute, second, ms);
+};
+const dateKeyToWibStartIso = (key: string) => new Date(dateKeyToWibMs(key, 0, 0, 0, 0)).toISOString();
+const dateKeyToWibEndIso = (key: string) => new Date(dateKeyToWibMs(key, 23, 59, 59, 999)).toISOString();
+const appDayOfWeek = (key: string) => {
+  const { y, m, d } = parseYmd(key);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+};
+const formatAppDateLabel = (date: Date, opts: Intl.DateTimeFormatOptions = {}) =>
+  date.toLocaleDateString("id-ID", { timeZone: APP_TIME_ZONE, ...opts });
+const formatAppTimeLabel = (date: Date, opts: Intl.DateTimeFormatOptions = {}) =>
+  date.toLocaleTimeString("id-ID", { timeZone: APP_TIME_ZONE, ...opts });
+
+async function fetchAllRows<T>(query: any, pageSize = 1000): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await query.range(from, from + pageSize - 1);
+    if (error) throw error;
+    const chunk = (data || []) as T[];
+    rows.push(...chunk);
+    if (chunk.length < pageSize) break;
+  }
+  return rows;
+}
 
 function DashboardGate() {
   const { isFirstResponse, loading } = useRole();
@@ -106,34 +171,45 @@ function Dashboard() {
     if (agentId !== "all" && !agentOptions.find((p) => p.id === agentId)) setAgentId("all");
   }, [agentOptions, agentId]);
 
-  const { startISO, endISO, effectiveStart, effectiveEnd } = useMemo(() => {
-    const end = new Date(); end.setHours(23, 59, 59, 999);
-    const start = new Date(); start.setHours(0, 0, 0, 0);
-    if (range === "today") {}
-    else if (range === "7d") start.setDate(start.getDate() - 6);
-    else if (range === "30d") start.setDate(start.getDate() - 29);
-    else if (range === "month") start.setDate(1);
-    else if (range === "year") { start.setMonth(0); start.setDate(1); }
-    else if (range === "custom" && from && to) {
-      const cs = new Date(from + "T00:00:00");
-      const ce = new Date(to + "T23:59:59.999");
-      return { startISO: cs.toISOString(), endISO: ce.toISOString(), effectiveStart: cs, effectiveEnd: ce };
+  const { startISO, endISO, effectiveStart, effectiveEnd, startKey, endKey } = useMemo(() => {
+    const todayKey = localDateKey(new Date());
+    let nextStartKey = todayKey;
+    let nextEndKey = todayKey;
+    if (range === "7d") nextStartKey = addDaysKey(todayKey, -6);
+    else if (range === "30d") nextStartKey = addDaysKey(todayKey, -29);
+    else if (range === "month") {
+      const { y, m } = parseYmd(todayKey);
+      nextStartKey = `${y}-${pad2(m)}-01`;
+    } else if (range === "year") {
+      const { y } = parseYmd(todayKey);
+      nextStartKey = `${y}-01-01`;
+    } else if (range === "custom" && from && to) {
+      nextStartKey = from <= to ? from : to;
+      nextEndKey = from <= to ? to : from;
     }
-    return { startISO: start.toISOString(), endISO: end.toISOString(), effectiveStart: start, effectiveEnd: end };
+    const sIso = dateKeyToWibStartIso(nextStartKey);
+    const eIso = dateKeyToWibEndIso(nextEndKey);
+    return {
+      startISO: sIso,
+      endISO: eIso,
+      effectiveStart: new Date(sIso),
+      effectiveEnd: new Date(eIso),
+      startKey: nextStartKey,
+      endKey: nextEndKey,
+    };
   }, [range, from, to]);
 
   // Auto-fill custom range from current preset saat user pindah ke "custom",
   // biar 7 hari preset & 7 hari custom benar-benar sama.
   useEffect(() => {
     if (range === "custom" && (!from || !to)) {
-      const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      setFrom(fmt(effectiveStart));
-      setTo(fmt(effectiveEnd));
+      setFrom(startKey);
+      setTo(endKey);
     }
   }, [range]);
 
-  const rangeDayCount = Math.round((effectiveEnd.getTime() - effectiveStart.getTime()) / 86400000) + 1;
-  const fmtLabel = (d: Date) => d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  const rangeDayCount = diffDaysKey(startKey, endKey) + 1;
+  const fmtLabel = (d: Date) => formatAppDateLabel(d, { day: "2-digit", month: "short", year: "numeric" });
 
   // filter helper: which user IDs are in scope
   const scopeIds = useMemo(() => {
@@ -157,7 +233,13 @@ function Dashboard() {
         <div className="flex flex-wrap gap-2 items-end">
           <div>
             <Label className="text-xs">Rentang</Label>
-            <Select value={range} onValueChange={setRange}>
+            <Select value={range} onValueChange={(value) => {
+              if (value === "custom" && (!from || !to)) {
+                setFrom(startKey);
+                setTo(endKey);
+              }
+              setRange(value);
+            }}>
               <SelectTrigger className="w-36 h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="today">Hari ini</SelectItem>
@@ -236,28 +318,28 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       const startDate = localDateKey(new Date(startISO));
       const endDate = localDateKey(new Date(endISO));
       const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes, productsRes] = await Promise.all([
-        supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, stages(name, color)"),
-        supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN"),
-        supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO),
-        supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
-          .gte("sent_at", startISO).lte("sent_at", endISO).eq("direction", "OUTBOUND").not("response_seconds", "is", null),
-        supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
-          .eq("action", "change_stage").gte("created_at", startISO).lte("created_at", endISO).order("created_at", { ascending: true }),
-        supabase.from("conversations").select("id, contact_id, assigned_agent_id, created_at"),
-        supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
-          .eq("action", "assign_agent").gte("created_at", startISO).lte("created_at", endISO),
-        supabase.from("agent_shifts").select("agent_id, shifts(start_time, end_time, days_of_week, is_active)"),
-        supabase.from("fr_date_shifts" as any).select("agent_id, work_date, start_time, end_time")
-          .gte("work_date", startDate).lte("work_date", endDate),
-        supabase.from("products").select("id, name").order("sort_order"),
+        fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, stages(name, color)")),
+        fetchAllRows<any>(supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN")),
+        fetchAllRows<any>(supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO)),
+        fetchAllRows<any>(supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
+          .gte("sent_at", startISO).lte("sent_at", endISO).eq("direction", "OUTBOUND").not("response_seconds", "is", null)),
+        fetchAllRows<any>(supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
+          .eq("action", "change_stage").gte("created_at", startISO).lte("created_at", endISO).order("created_at", { ascending: true })),
+        fetchAllRows<any>(supabase.from("conversations").select("id, contact_id, assigned_agent_id, created_at")),
+        fetchAllRows<any>(supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
+          .eq("action", "assign_agent").gte("created_at", startISO).lte("created_at", endISO)),
+        fetchAllRows<any>(supabase.from("agent_shifts").select("agent_id, shifts(start_time, end_time, days_of_week, is_active)")),
+        fetchAllRows<any>(supabase.from("fr_date_shifts" as any).select("agent_id, work_date, start_time, end_time")
+          .gte("work_date", startDate).lte("work_date", endDate)),
+        fetchAllRows<any>(supabase.from("products").select("id, name").order("sort_order")),
       ]);
-      const productList = (productsRes.data || []) as any[];
+      const productList = productsRes as any[];
       const productMap: Record<string, string> = {};
       productList.forEach((p: any) => { productMap[p.id] = p.name; });
 
-      const allContacts = (contacts.data || []) as any[];
-      const openConvsAll = (openConv.data || []) as any[];
-      const allConvsAll = (allConvs.data || []) as any[];
+      const allContacts = contacts as any[];
+      const openConvsAll = openConv as any[];
+      const allConvsAll = allConvs as any[];
 
       // Peta conversation -> agent yang di-assign (semua conversation).
       const convAgent: Record<string, string | null> = {};
@@ -274,34 +356,29 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         if (ce <= cs) return;
         (shiftIntervals[aid] ||= []).push([cs, ce]);
       };
-      const days: Date[] = [];
-      const dCursor = new Date(startISO); dCursor.setHours(0, 0, 0, 0);
-      while (dCursor.getTime() <= endMs) {
-        days.push(new Date(dCursor));
-        dCursor.setDate(dCursor.getDate() + 1);
-      }
-      ((agentShiftsRes.data as any[]) || []).forEach((row: any) => {
+      const days = enumerateDateKeys(startDate, endDate);
+      ((agentShiftsRes as any[]) || []).forEach((row: any) => {
         const sh = row.shifts;
         if (!sh || !sh.is_active) return;
         const [sh_h, sh_m] = String(sh.start_time).split(":").map(Number);
         const [eh, em] = String(sh.end_time).split(":").map(Number);
         const dows: number[] = sh.days_of_week || [];
-        days.forEach((d) => {
-          if (!dows.includes(d.getDay())) return;
-          const ds = new Date(d); ds.setHours(sh_h, sh_m, 0, 0);
-          const de = new Date(d); de.setHours(eh, em, 0, 0);
-          if (de.getTime() <= ds.getTime()) de.setDate(de.getDate() + 1);
-          addInt(row.agent_id, ds.getTime(), de.getTime());
+        days.forEach((dayKey) => {
+          if (!dows.includes(appDayOfWeek(dayKey))) return;
+          const ds = dateKeyToWibMs(dayKey, sh_h, sh_m, 0, 0);
+          let de = dateKeyToWibMs(dayKey, eh, em, 0, 0);
+          if (de <= ds) de = dateKeyToWibMs(addDaysKey(dayKey, 1), eh, em, 0, 0);
+          addInt(row.agent_id, ds, de);
         });
       });
-      ((frShRes.data as any[]) || []).forEach((row: any) => {
+      ((frShRes as any[]) || []).forEach((row: any) => {
         const [sh, sm] = String(row.start_time).split(":").map(Number);
         const [eh, em] = String(row.end_time).split(":").map(Number);
-        const base = new Date(row.work_date + "T00:00:00");
-        const ds = new Date(base); ds.setHours(sh, sm, 0, 0);
-        const de = new Date(base); de.setHours(eh, em, 0, 0);
-        if (de.getTime() <= ds.getTime()) de.setDate(de.getDate() + 1);
-        addInt(row.agent_id, ds.getTime(), de.getTime());
+        const dayKey = String(row.work_date);
+        const ds = dateKeyToWibMs(dayKey, sh, sm, 0, 0);
+        let de = dateKeyToWibMs(dayKey, eh, em, 0, 0);
+        if (de <= ds) de = dateKeyToWibMs(addDaysKey(dayKey, 1), eh, em, 0, 0);
+        addInt(row.agent_id, ds, de);
       });
       const inShift = (aid: string, ts: number) => {
         const arr = shiftIntervals[aid];
@@ -311,7 +388,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       };
 
       // ==== Response messages ====
-      const allRespRaw = (respMsgs.data || []) as any[];
+      const allRespRaw = (respMsgs || []) as any[];
       // Scope filter (agent/divisi) untuk kartu "Avg Respon".
       const scopedResp = scopeIds ? allRespRaw.filter((m) => m.sent_by_id && scopeIds.has(m.sent_by_id)) : allRespRaw;
       const teamAvg = scopedResp.length ? Math.round(scopedResp.reduce((s, m) => s + (m.response_seconds || 0), 0) / scopedResp.length) : 0;
@@ -382,7 +459,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
 
       // Volume Pesan Harian: seluruh bubble (tidak di-scope).
       const dayMap: Record<string, { date: string; in: number; out: number }> = {};
-      (msgsList.data || []).forEach((m: any) => {
+      (msgsList || []).forEach((m: any) => {
         const d = localDateKey(new Date(m.sent_at));
         dayMap[d] = dayMap[d] || { date: d, in: 0, out: 0 };
         if (m.direction === "INBOUND") dayMap[d].in++; else dayMap[d].out++;
@@ -397,7 +474,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       allContacts.forEach((c: any) => { contactCreated[c.id] = c.created_at; });
 
       const perContactLogs: Record<string, any[]> = {};
-      (stageLogs.data || []).forEach((l: any) => {
+      (stageLogs || []).forEach((l: any) => {
         const m = l.metadata || {};
         const cid = m.contact_id || convToContact[l.entity_id];
         if (!cid) return;
@@ -440,7 +517,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       allContacts.forEach((c: any) => { contactMap[c.id] = c; });
 
       const histAgg: Record<string, { id: string; assignCount: number; contactIds: Set<string> }> = {};
-      (assignLogs.data || []).forEach((l: any) => {
+      (assignLogs || []).forEach((l: any) => {
         const m = l.metadata || {};
         const toId = m.to_agent;
         if (!toId) return;
@@ -484,7 +561,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       setData({
         totalContacts: allContacts.length,               // Total Leads = seluruh /leads
         openConv: openConvsAll.length,                   // Percakapan Aktif = seluruh open
-        messagesRange: (msgsList.data || []).length,     // Pesan = seluruh bubble di rentang
+        messagesRange: (msgsList || []).length,          // Pesan = seluruh bubble di rentang
         teamAvg, agentStats, stageDist, productDist, topStage, totalRevenue,
         myInbox, dailySeries, transitions,
         agentLeadStats, contactMap, buckets,
@@ -814,28 +891,24 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
   useEffect(() => {
     (async () => {
-      const [evRes, invRes, invSentRes, convRes, ctRes] = await Promise.all([
-        supabase.from("audit_events")
+      const [evs, invs, invSent, convs, contacts] = await Promise.all([
+        fetchAllRows<any>(supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, conversation_id, occurred_at, new_value, old_value")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)
-          .order("occurred_at", { ascending: true }).limit(20000),
-        supabase.from("assignment_invitations")
+          .order("occurred_at", { ascending: true })),
+        fetchAllRows<any>(supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, conversation_id, status, responded_at, created_at")
           .eq("status", "accepted")
-          .gte("responded_at", startISO).lte("responded_at", endISO),
-        supabase.from("assignment_invitations")
+          .gte("responded_at", startISO).lte("responded_at", endISO)),
+        fetchAllRows<any>(supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
-          .gte("created_at", startISO).lte("created_at", endISO),
-        supabase.from("conversations")
-          .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id"),
-        supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id"),
+          .gte("created_at", startISO).lte("created_at", endISO)),
+        fetchAllRows<any>(supabase.from("conversations")
+          .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id")),
+        fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id")),
       ]);
-      const evs = (evRes.data || []) as any[];
-      const invs = (invRes.data || []) as any[];
-      const invSent = (invSentRes.data || []) as any[];
-      const convs = (convRes.data || []) as any[];
       const contactById: Record<string, any> = {};
-      (ctRes.data || []).forEach((c: any) => { contactById[c.id] = c; });
+      (contacts || []).forEach((c: any) => { contactById[c.id] = c; });
       const nameById: Record<string, string> = {};
       profiles.forEach((p) => { nameById[p.id] = p.full_name || p.email || "Agent"; });
 
@@ -908,14 +981,13 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         const priorFR: any[] = [];
         for (let i = 0; i < contactIdsInRange.length; i += CHUNK) {
           const slice = contactIdsInRange.slice(i, i + CHUNK);
-          const { data: prior } = await supabase.from("audit_events")
+          const prior = await fetchAllRows<any>(supabase.from("audit_events")
             .select("actor_id, contact_id, occurred_at, new_value")
             .eq("event_type", "chat_out")
             .in("contact_id", slice)
             .in("actor_id", Array.from(frUserIds))
             .lt("occurred_at", startISO)
-            .order("occurred_at", { ascending: true })
-            .limit(20000);
+            .order("occurred_at", { ascending: true }));
           if (prior) priorFR.push(...prior);
         }
         for (const p of priorFR) {
@@ -1081,17 +1153,18 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       for (let h = 0; h < 24; h++) hourly[h] = 0;
       createdInRange.forEach((e) => {
         if (selectedAgent && firstFRActor[e.contact_id] !== selectedAgent) return;
-        hourly[new Date(e.occurred_at).getHours()]++;
+        hourly[appHour(new Date(e.occurred_at))]++;
       });
       const hourlyData = Object.entries(hourly).map(([h, c]) => ({ hour: `${String(h).padStart(2, "0")}:00`, count: c }));
 
       const days: Record<string, { date: string; leads: number; responded: number }> = {};
-      const dStart = new Date(startISO); const dEnd = new Date(endISO);
-      for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
-        const key = localDateKey(d);
-        const label = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const startKey = localDateKey(new Date(startISO));
+      const endKey = localDateKey(new Date(endISO));
+      enumerateDateKeys(startKey, endKey).forEach((key) => {
+        const [, m, d] = key.split("-");
+        const label = `${m}-${d}`;
         days[key] = { date: label, leads: 0, responded: 0 };
-      }
+      });
       createdInRange.forEach((e) => {
         const key = localDateKey(new Date(e.occurred_at));
         if (!days[key]) return;
@@ -1110,7 +1183,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       evs.forEach((e: any) => {
         if (!e.actor_id) return;
         const d = new Date(e.occurred_at);
-        const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const dayKey = localDateKey(d);
         const t = d.getTime();
         const perAgent = workByAgent[e.actor_id] = workByAgent[e.actor_id] || {};
         const day = perAgent[dayKey] = perAgent[dayKey] || { date: dayKey, firstMs: t, lastMs: t, count: 0 };
@@ -1483,8 +1556,8 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
                         {a.dailyWork.map((d: any) => {
                           const start = new Date(d.startMs);
                           const end = new Date(d.endMs);
-                          const dayName = start.toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
-                          const timeFmt = (dt: Date) => dt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+                          const dayName = formatAppDateLabel(start, { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+                          const timeFmt = (dt: Date) => formatAppTimeLabel(dt, { hour: "2-digit", minute: "2-digit" });
                           return (
                             <tr key={d.date} className="border-b last:border-0 hover:bg-accent/20">
                               <td className="py-1.5 px-3">{dayName}</td>
@@ -1527,11 +1600,11 @@ function PerformanceTab({ startISO, endISO, profiles, scopeIds }: {
 
   useEffect(() => {
     (async () => {
-      const [{ data: events }, { data: stages }] = await Promise.all([
-        supabase.from("audit_events")
+      const [events, stages] = await Promise.all([
+        fetchAllRows<any>(supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, new_value, occurred_at")
-          .gte("occurred_at", startISO).lte("occurred_at", endISO).limit(20000),
-        supabase.from("stages").select("id, name, order_index").order("order_index"),
+          .gte("occurred_at", startISO).lte("occurred_at", endISO)),
+        fetchAllRows<any>(supabase.from("stages").select("id, name, order_index").order("order_index")),
       ]);
 
       const evs = (events || []) as any[];
@@ -1743,7 +1816,7 @@ function FRDrillDialog({ drill, data, onClose }: { drill: { kind: "first" | "con
   };
   const aname = (id: string) => nameById[id] || id.slice(0, 8);
   const fmtDT = (s: string) => {
-    try { return new Date(s).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
+    try { return new Date(s).toLocaleString("id-ID", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
     catch { return s; }
   };
 
