@@ -948,11 +948,9 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
               firstFRTs[e.contact_id] = t;
               s.firstChats++;
               const cs = cycleStartTs[e.contact_id];
-              if (cs) {
-                const frSec = Math.max(0, Math.round((t - cs) / 1000));
-                s.firstRespSecList.push(frSec);
-                firstResponses.push({ actor_id: e.actor_id, contact_id: e.contact_id, seconds: frSec, at: e.occurred_at });
-              }
+              const frSec = cs ? Math.max(0, Math.round((t - cs) / 1000)) : 0;
+              if (cs) s.firstRespSecList.push(frSec);
+              firstResponses.push({ actor_id: e.actor_id, contact_id: e.contact_id, seconds: frSec, at: e.occurred_at });
               (frTouchers[e.contact_id] = frTouchers[e.contact_id] || []).push(e.actor_id);
               // Kalau contact ini sudah pernah dibalas FR lain SEBELUM rentang,
               // reply pertama in-range dari FR berbeda tetap dihitung sbg continue.
