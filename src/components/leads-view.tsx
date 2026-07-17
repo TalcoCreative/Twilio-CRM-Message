@@ -396,7 +396,13 @@ function LeadDetailDialog({ contact, stages, products, agents, contentCodes, onC
   const [profMap, setProfMap] = useState<Record<string, any>>({});
   const [opening, setOpening] = useState(false);
 
-  useEffect(() => { setForm(contact ? { ...contact } : null); }, [contact]);
+  useEffect(() => {
+    if (!contact) { setForm(null); return; }
+    // Auto-detect: kalau contact sudah punya content_code_id (misal ke-tag oleh workflow ads),
+    // atau source-nya diawali "Ads", tipe default = Ads. Selain itu = Organik.
+    const looksAds = !!contact.content_code_id || (contact.source || "").toLowerCase().startsWith("ads");
+    setForm({ ...contact, _source_type: looksAds ? "ads" : "organik" });
+  }, [contact]);
 
   useEffect(() => {
     if (!contact) return;
