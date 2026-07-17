@@ -151,7 +151,7 @@ function BroadcastPage() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Broadcast WhatsApp</h1>
-          <p className="text-sm text-muted-foreground">Kirim pesan terarah berdasarkan produk, stages, atau agent yang menangani.</p>
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5"><Clock className="size-3.5" /> Hanya kontak yang masih dalam window 24 jam WhatsApp yang bisa di-blast.</p>
         </div>
       </header>
 
