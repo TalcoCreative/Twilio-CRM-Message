@@ -994,9 +994,10 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         const c = ensureFR(closerId);
         c.closings++;
 
+        const seedActor = firstFRActor[inv.contact_id] || priorFRActor[inv.contact_id];
         const touchers = (frTouchers[inv.contact_id] && frTouchers[inv.contact_id].length)
           ? frTouchers[inv.contact_id].slice()
-          : (firstFRActor[inv.contact_id] ? [firstFRActor[inv.contact_id]] : [closerId]);
+          : (seedActor ? [seedActor] : [closerId]);
         if (!touchers.includes(closerId)) touchers.push(closerId);
 
         if (touchers.length > 1) {
