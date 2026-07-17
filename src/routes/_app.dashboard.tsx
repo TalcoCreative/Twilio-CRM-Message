@@ -466,7 +466,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         totalContacts: allContacts.length,               // Total Leads = seluruh /leads
         openConv: openConvsAll.length,                   // Percakapan Aktif = seluruh open
         messagesRange: (msgsList.data || []).length,     // Pesan = seluruh bubble di rentang
-        teamAvg, agentStats, stageDist, topStage, totalRevenue,
+        teamAvg, agentStats, stageDist, productDist, topStage, totalRevenue,
         myInbox, dailySeries, transitions,
         agentLeadStats, contactMap, buckets,
       });
