@@ -21,14 +21,19 @@ import { useAuth } from "@/hooks/use-auth";
 type Stage = { id: string; name: string; color: string; is_default?: boolean };
 type Product = { id: string; name: string };
 type Profile = { id: string; full_name: string | null; email: string };
+type ContentCode = { id: string; code: string; name: string; is_active: boolean };
 type Contact = {
   id: string; whatsapp_number: string; full_name: string | null;
   domicile: string | null; stage_id: string | null; created_at: string;
   interested_product_id: string | null; estimated_revenue: number | null;
   source: string | null; notes: string | null; document_url: string | null;
   chief_complaint: string | null; assigned_agent_id?: string | null;
+  content_code_id?: string | null;
   stages?: { name: string; color: string };
 };
+
+type SortKey = "full_name" | "whatsapp_number" | "product" | "stage" | "source" | "estimated_revenue" | "created_at";
+type SortDir = "asc" | "desc";
 
 export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   const { user } = useAuth();
