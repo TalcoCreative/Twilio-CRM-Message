@@ -891,7 +891,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
   useEffect(() => {
     (async () => {
-      const [evs, invs, invSent, convs, contacts] = await Promise.all([
+      const [evs, invs, invSent, invResponded, convs, contacts] = await Promise.all([
         fetchAllRows<any>(supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, conversation_id, occurred_at, new_value, old_value")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)
@@ -903,6 +903,11 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         fetchAllRows<any>(supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
           .gte("created_at", startISO).lte("created_at", endISO)),
+        fetchAllRows<any>(supabase.from("assignment_invitations")
+          .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
+          .in("status", ["accepted", "rejected"])
+          .gte("responded_at", startISO).lte("responded_at", endISO)),
+
         fetchAllRows<any>(supabase.from("conversations")
           .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id")),
         fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id")),
