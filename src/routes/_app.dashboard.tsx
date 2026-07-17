@@ -1630,9 +1630,15 @@ function StatCard({ icon: Icon, label, value }: { icon: any; label: string; valu
   );
 }
 
-function KPI({ icon: Icon, label, value, color, hint }: any) {
+function KPI({ icon: Icon, label, value, color, hint, onClick }: any) {
+  const clickable = typeof onClick === "function";
   return (
-    <Card className="glow-soft">
+    <Card
+      className={`glow-soft ${clickable ? "cursor-pointer hover:border-primary/60 hover:bg-accent/30 transition" : ""}`}
+      onClick={onClick}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+    >
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-muted-foreground">{label}</span>
@@ -1640,8 +1646,96 @@ function KPI({ icon: Icon, label, value, color, hint }: any) {
         </div>
         <div className="text-xl md:text-2xl font-bold">{value}</div>
         {hint && <div className="text-[10px] text-muted-foreground mt-1 leading-snug">{hint}</div>}
+        {clickable && <div className="text-[10px] text-primary/70 mt-1">Klik untuk detail →</div>}
       </CardContent>
     </Card>
+  );
+}
+
+function FRDrillDialog({ drill, data, onClose }: { drill: { kind: "first" | "continue" | "closing" | "share" } | null; data: any; onClose: () => void }) {
+  const open = !!drill;
+  const nameById: Record<string, string> = data?.nameById || {};
+  const contactById: Record<string, any> = data?.contactById || {};
+  const cname = (id: string) => {
+    const c = contactById[id];
+    return c ? (c.full_name || c.whatsapp_number || id.slice(0, 8)) : id.slice(0, 8);
+  };
+  const aname = (id: string) => nameById[id] || id.slice(0, 8);
+  const fmtDT = (s: string) => {
+    try { return new Date(s).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
+    catch { return s; }
+  };
+
+  const meta: Record<string, { title: string; desc: string }> = {
+    first: { title: "Detail Total First Response", desc: "Setiap baris = 1 kali agent FR menjadi orang pertama yang membalas lead. Setiap lead hanya dihitung sekali di sini." },
+    continue: { title: "Detail Continue Conversation", desc: "Setiap baris = 1 kali agent FR mengambil alih / melanjutkan lead yang sebelumnya dipegang FR lain." },
+    closing: { title: "Detail Total Closing", desc: "Invitation dari FR yang diterima agent non-FR. Dihitung untuk pengirim invitation." },
+    share: { title: "Detail Closing Share", desc: "Closing yang dibagi karena >1 FR menangani lead sebelum invitation dikirim." },
+  };
+
+  let rows: Array<{ contact_id: string; primary: string; secondary?: string; at: string }> = [];
+  if (drill?.kind === "first") {
+    rows = (data?.firstDetails || []).map((d: any) => ({
+      contact_id: d.contact_id,
+      primary: aname(d.actor_id),
+      secondary: `Balasan pertama · ${d.seconds >= 3600 ? `${Math.floor(d.seconds / 3600)}j ${Math.floor((d.seconds % 3600) / 60)}m` : d.seconds >= 60 ? `${Math.floor(d.seconds / 60)}m ${d.seconds % 60}d` : `${d.seconds}d`}`,
+      at: d.at,
+    }));
+  } else if (drill?.kind === "continue") {
+    rows = (data?.continueDetails || []).map((d: any) => ({
+      contact_id: d.contact_id,
+      primary: aname(d.actor_id),
+      secondary: `Melanjutkan dari ${d.previous_actor_id ? aname(d.previous_actor_id) : "FR lain"} · ${d.via === "chat_out" ? "reply chat" : d.via === "conv_takeover" ? "take-over" : "reassign"}`,
+      at: d.at,
+    }));
+  } else if (drill?.kind === "closing") {
+    rows = (data?.closingDetails || []).map((d: any) => ({
+      contact_id: d.contact_id,
+      primary: aname(d.closer_id),
+      secondary: `Invitation diterima ${d.to_user_id ? aname(d.to_user_id) : "agent tujuan"}`,
+      at: d.at,
+    }));
+  } else if (drill?.kind === "share") {
+    rows = (data?.shareDetails || []).map((d: any) => ({
+      contact_id: d.contact_id,
+      primary: `${d.touchers.length} FR terlibat (share ${(1 / d.touchers.length).toFixed(2)}/agent)`,
+      secondary: d.touchers.map((t: string) => aname(t)).join(" · "),
+      at: d.at,
+    }));
+  }
+
+  rows = rows.slice().sort((a, b) => (a.at < b.at ? 1 : -1));
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{drill ? meta[drill.kind].title : ""}</DialogTitle>
+        </DialogHeader>
+        {drill && (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground leading-snug">{meta[drill.kind].desc}</p>
+            <div className="text-xs text-muted-foreground">Total: <b className="text-foreground">{rows.length}</b> baris</div>
+            {rows.length === 0 ? (
+              <div className="text-sm text-muted-foreground text-center py-8">Tidak ada data pada rentang & filter ini.</div>
+            ) : (
+              <div className="border rounded-lg divide-y">
+                {rows.map((r, i) => (
+                  <div key={i} className="p-2.5 text-xs flex flex-wrap items-start justify-between gap-2 hover:bg-accent/30">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium">{cname(r.contact_id)}</div>
+                      <div className="text-muted-foreground">{r.primary}</div>
+                      {r.secondary && <div className="text-muted-foreground text-[11px]">{r.secondary}</div>}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground font-mono whitespace-nowrap">{fmtDT(r.at)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
