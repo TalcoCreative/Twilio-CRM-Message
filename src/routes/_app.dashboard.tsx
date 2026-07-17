@@ -1151,17 +1151,21 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
     <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPI icon={MessageCircle} label="Total First Response" value={data.totalFirst} color="text-emerald-500"
-          hint="Jumlah lead baru yang pertama kali dijawab oleh agent FR."
+          hint="Lead baru yang first-reply-nya jatuh DI rentang tanggal ini. Lead yang sudah pernah dibalas FR sebelum rentang tidak dihitung di sini (masuk Continue)."
           onClick={() => setDrill({ kind: "first" })} />
         <KPI icon={ArrowRightLeft} label="Continue Conversation" value={data.totalContinue} color="text-amber-500"
-          hint="Berapa kali agent FR melanjutkan chat yang sebelumnya dipegang FR lain."
+          hint="FR melanjutkan chat yang sebelumnya dipegang FR lain (reply, take-over, atau reassign). Termasuk lead lama yang first-responnya di luar rentang."
           onClick={() => setDrill({ kind: "continue" })} />
         <KPI icon={CheckCircle2} label="Total Closing" value={data.totalClosing} color="text-primary"
-          hint="Jumlah invitation yang dikirim FR & diterima agent non-FR (dihitung untuk pengirim invitation)."
+          hint="Invitation FR → non-FR yang diterima DI rentang ini. Timeline-nya invitation, bukan first-response — jadi lead lama pun bisa masuk. Bisa > Total First Response."
           onClick={() => setDrill({ kind: "closing" })} />
         <KPI icon={Trophy} label="Closing Share" value={data.totalShare} color="text-fuchsia-500"
-          hint="Porsi closing yang dibagi rata jika >1 FR menangani lead sebelum invitation. Solo handler tidak dapat share."
+          hint="Porsi closing (1/jumlah FR) yang dibagi hanya kalau >1 FR ikut menangani lead sebelum invitation. Solo handler tidak dapat share (sudah dapat Total Closing utuh)."
           onClick={() => setDrill({ kind: "share" })} />
+        <KPI icon={Timer} label="Avg First Response" value={fmtTime(data.avgFirstRespSec)} color="text-emerald-500"
+          hint="Rata-rata waktu dari lead masuk sampai balasan pertama FR." />
+        <KPI icon={Clock} label="Avg Handle Time" value={fmtTime(data.avgHandle)} color="text-blue-500"
+          hint="Rata-rata durasi dari balasan pertama FR sampai invitation closing diterima. Dihitung untuk semua FR yang ikut menangani lead tsb." />
         <KPI icon={Timer} label="Avg First Response" value={fmtTime(data.avgFirstRespSec)} color="text-emerald-500"
           hint="Rata-rata waktu dari lead masuk sampai balasan pertama FR." />
         <KPI icon={Clock} label="Avg Handle Time" value={fmtTime(data.avgHandle)} color="text-blue-500"
