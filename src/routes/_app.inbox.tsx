@@ -513,7 +513,14 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
         status: "pending",
         previous_stage_id: active!.contact?.stage_id || null,
       } as any).select().single();
-      if (error) { toast.error(error.message); return; }
+      if (error) {
+        if ((error as any).code === "23505" || /uniq_pending_invitation_per_conv/i.test(error.message)) {
+          toast.error("Sudah ada invitation pending untuk chat ini. Batalkan dulu di /invitations sebelum kirim baru.");
+        } else {
+          toast.error(error.message);
+        }
+        return;
+      }
       await logAction("send_invitation", {
         contact_name: active?.contact?.full_name, whatsapp: active?.contact?.whatsapp_number,
         to_agent: agentId, to_name: agentName(agentId),
