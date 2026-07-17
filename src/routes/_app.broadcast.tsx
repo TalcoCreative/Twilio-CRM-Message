@@ -202,7 +202,9 @@ function BroadcastPage() {
             <div className="max-h-[420px] overflow-auto border rounded-md divide-y">
               {loading && <div className="p-6 text-center text-sm text-muted-foreground">Memuat...</div>}
               {!loading && filtered.length === 0 && (
-                <div className="p-8 text-center text-sm text-muted-foreground">Tidak ada kontak yang cocok dengan filter.</div>
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  Fitur belum bisa digunakan untuk broadcast message. Tidak ada kontak yang masih dalam window 24 jam WhatsApp sesuai filter ini.
+                </div>
               )}
               {filtered.slice(0, 500).map((c) => {
                 const stage = stages.find((s) => s.id === c.stage_id);
