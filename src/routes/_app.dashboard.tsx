@@ -1196,13 +1196,17 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPI icon={ArrowRightLeft} label="Invitation Dikirim" value={data.invSentTotal} color="text-primary"
-          hint="Total invitation yang dikirim FR untuk mengoper lead ke agent lain." />
+          hint="Total invitation yang dikirim FR untuk mengoper lead ke agent lain."
+          onClick={() => setDrill({ kind: "invSent" })} />
         <KPI icon={CheckCircle2} label="Diterima (non-FR)" value={data.invAcceptedNonFR} color="text-emerald-500"
-          hint="Invitation yang diterima oleh agent di luar divisi First Response — dihitung sebagai closing." />
+          hint="Invitation yang diterima oleh agent di luar divisi First Response — dihitung sebagai closing."
+          onClick={() => setDrill({ kind: "invAccepted" })} />
         <KPI icon={AlertTriangle} label="Ditolak" value={data.invRejected} color="text-rose-500"
-          hint="Invitation yang ditolak oleh agent tujuan." />
+          hint="Invitation yang ditolak oleh agent tujuan."
+          onClick={() => setDrill({ kind: "invRejected" })} />
         <KPI icon={Clock} label="Pending" value={data.invPending} color="text-amber-500"
-          hint="Invitation yang masih menunggu respon dari agent tujuan." />
+          hint="Invitation yang masih menunggu respon dari agent tujuan."
+          onClick={() => setDrill({ kind: "invPending" })} />
       </div>
 
 
