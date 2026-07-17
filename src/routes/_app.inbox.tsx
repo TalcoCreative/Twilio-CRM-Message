@@ -823,7 +823,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     ) : (
                       <button
                         type="button"
-                        className="font-semibold text-base truncate text-left hover:text-primary transition-colors"
+                        className="font-semibold text-base truncate text-left hover:text-primary transition-colors block w-full max-w-full"
                         title="Klik untuk ubah nama lead"
                         onClick={() => { setNameDraft(active.contact?.full_name || ""); setEditingName(true); }}
                       >
