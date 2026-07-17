@@ -891,7 +891,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
   useEffect(() => {
     (async () => {
-      const [evs, invs, invSent, convs, contacts] = await Promise.all([
+      const [evs, invs, invSent, invResponded, convs, contacts] = await Promise.all([
         fetchAllRows<any>(supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, conversation_id, occurred_at, new_value, old_value")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)
@@ -903,6 +903,11 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         fetchAllRows<any>(supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
           .gte("created_at", startISO).lte("created_at", endISO)),
+        fetchAllRows<any>(supabase.from("assignment_invitations")
+          .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
+          .in("status", ["accepted", "rejected"])
+          .gte("responded_at", startISO).lte("responded_at", endISO)),
+
         fetchAllRows<any>(supabase.from("conversations")
           .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id")),
         fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id")),
@@ -1239,18 +1244,25 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         .sort((a, b) => b.closings - a.closings || b.slaPct - a.slaPct)
         .slice(0, 10);
 
-      // Invitation KPIs — filter dari FR, opsional per agent tertentu.
-      const invScoped = invSent.filter((i) => {
+      // Invitation KPIs — Dikirim/Pending pakai created_at; Diterima/Ditolak pakai responded_at
+      // supaya konsisten dengan Total Closing (yang juga pakai responded_at).
+      const invSentScoped = invSent.filter((i) => {
         if (!frUserIds.has(i.from_user_id)) return false;
         if (selectedAgent && i.from_user_id !== selectedAgent) return false;
         return true;
       });
-      const invSentTotal = invScoped.length;
-      const invAcceptedNonFR = invScoped.filter(
+      const invRespondedScoped = invResponded.filter((i) => {
+        if (!frUserIds.has(i.from_user_id)) return false;
+        if (selectedAgent && i.from_user_id !== selectedAgent) return false;
+        return true;
+      });
+      const invSentTotal = invSentScoped.length;
+      const invAcceptedNonFR = invRespondedScoped.filter(
         (i) => i.status === "accepted" && !frUserIds.has(i.to_user_id),
       ).length;
-      const invRejected = invScoped.filter((i) => i.status === "rejected").length;
-      const invPending = invScoped.filter((i) => i.status === "pending").length;
+      const invRejected = invRespondedScoped.filter((i) => i.status === "rejected").length;
+      const invPending = invSentScoped.filter((i) => i.status === "pending").length;
+
 
       // Scope details by selectedAgent for drill-down.
       const scopedFirstDetails = selectedAgent
@@ -1274,10 +1286,11 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         invSentTotal, invAcceptedNonFR, invRejected, invPending,
         firstDetails: scopedFirstDetails, continueDetails: scopedContinueDetails,
         closingDetails: scopedClosingDetails, shareDetails: scopedShareDetails,
-        invSentDetails: invScoped,
-        invAcceptedDetails: invScoped.filter((i) => i.status === "accepted" && !frUserIds.has(i.to_user_id)),
-        invRejectedDetails: invScoped.filter((i) => i.status === "rejected"),
-        invPendingDetails: invScoped.filter((i) => i.status === "pending"),
+        invSentDetails: invSentScoped,
+        invAcceptedDetails: invRespondedScoped.filter((i: any) => i.status === "accepted" && !frUserIds.has(i.to_user_id)),
+        invRejectedDetails: invRespondedScoped.filter((i: any) => i.status === "rejected"),
+        invPendingDetails: invSentScoped.filter((i: any) => i.status === "pending"),
+
         nameById, contactById,
       });
     })();
