@@ -921,12 +921,9 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         for (const p of priorFR) {
           if (!p.contact_id || !p.actor_id) continue;
           if (isInternalNoteEvent(p)) continue;
-          if (!firstFRActor[p.contact_id]) {
-            firstFRActor[p.contact_id] = p.actor_id;
-            firstFRTs[p.contact_id] = new Date(p.occurred_at).getTime();
+          if (!priorFRActor[p.contact_id]) {
+            priorFRActor[p.contact_id] = p.actor_id;
           }
-          const list = frTouchers[p.contact_id] = frTouchers[p.contact_id] || [];
-          if (!list.includes(p.actor_id)) list.push(p.actor_id);
         }
       }
 
