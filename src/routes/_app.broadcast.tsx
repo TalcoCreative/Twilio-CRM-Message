@@ -106,11 +106,19 @@ function BroadcastPage() {
 
   async function send() {
     if (!message.trim() || selected.size === 0) { toast.error("Pilih kontak & isi pesan"); return; }
-    if (!confirm(`Kirim broadcast ke ${selected.size} kontak?`)) return;
+    const eligible = [...selected].filter((id) => openWindowIds.has(id));
+    if (eligible.length === 0) {
+      toast.error("Fitur belum bisa digunakan untuk broadcast message — tidak ada kontak dalam window 24 jam.");
+      return;
+    }
+    if (eligible.length < selected.size) {
+      toast.warning(`${selected.size - eligible.length} kontak dilewati karena window 24 jam sudah tertutup.`);
+    }
+    if (!confirm(`Kirim broadcast ke ${eligible.length} kontak?`)) return;
     setSending(true);
     const { data: { session } } = await supabase.auth.getSession();
     let ok = 0, fail = 0;
-    for (const id of selected) {
+    for (const id of eligible) {
       const c = contacts.find((x) => x.id === id);
       if (!c) { fail++; continue; }
       let { data: conv } = await supabase.from("conversations").select("id").eq("contact_id", id).eq("status", "OPEN").maybeSingle();
