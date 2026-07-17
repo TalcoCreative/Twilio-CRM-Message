@@ -76,6 +76,7 @@ function BroadcastPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return contacts.filter((c) => {
+      if (!openWindowIds.has(c.id)) return false;
       if (productId !== ALL && c.interested_product_id !== productId) return false;
       if (stageId !== ALL && c.stage_id !== stageId) return false;
       if (agentId !== ALL) {
@@ -87,9 +88,13 @@ function BroadcastPage() {
       }
       return true;
     });
-  }, [contacts, productId, stageId, agentId, query]);
+  }, [contacts, openWindowIds, productId, stageId, agentId, query]);
 
   function toggle(id: string) {
+    if (!openWindowIds.has(id)) {
+      toast.error("Fitur belum bisa digunakan untuk broadcast message — window 24 jam kontak ini sudah tertutup.");
+      return;
+    }
     setSelected((s) => {
       const next = new Set(s);
       if (next.has(id)) next.delete(id); else next.add(id);
