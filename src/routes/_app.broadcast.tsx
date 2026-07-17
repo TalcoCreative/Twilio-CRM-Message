@@ -30,6 +30,8 @@ function BroadcastPage() {
   const [stages, setStages] = useState<{ id: string; name: string; color: string }[]>([]);
   const [agents, setAgents] = useState<{ id: string; full_name: string | null; email: string | null }[]>([]);
 
+  const [openWindowIds, setOpenWindowIds] = useState<Set<string>>(new Set());
+
   const [productId, setProductId] = useState<string>(ALL);
   const [stageId, setStageId] = useState<string>(ALL);
   const [agentId, setAgentId] = useState<string>(ALL);
@@ -42,7 +44,8 @@ function BroadcastPage() {
 
   useEffect(() => {
     (async () => {
-      const [{ data: c }, { data: p }, { data: s }, { data: a }] = await Promise.all([
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const [{ data: c }, { data: p }, { data: s }, { data: a }, { data: m }] = await Promise.all([
         supabase.from("contacts")
           .select("id, full_name, whatsapp_number, stage_id, interested_product_id, assigned_agent_id")
           .order("last_interaction_at", { ascending: false, nullsFirst: false })
@@ -50,11 +53,22 @@ function BroadcastPage() {
         supabase.from("products").select("id,name").eq("is_active", true).order("sort_order"),
         supabase.from("stages").select("id,name,color").order("order_index"),
         supabase.from("profiles").select("id, full_name, email").order("full_name"),
+        supabase.from("messages")
+          .select("conversation:conversations!inner(contact_id)")
+          .eq("direction", "INBOUND")
+          .gte("sent_at", since)
+          .limit(5000),
       ]);
       setContacts((c as Contact[]) || []);
       setProducts(p || []);
       setStages(s || []);
       setAgents(a || []);
+      const set = new Set<string>();
+      for (const row of (m as any[]) || []) {
+        const cid = row?.conversation?.contact_id;
+        if (cid) set.add(cid);
+      }
+      setOpenWindowIds(set);
       setLoading(false);
     })();
   }, []);
