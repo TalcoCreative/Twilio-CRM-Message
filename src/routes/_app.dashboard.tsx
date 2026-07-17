@@ -909,7 +909,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           const oldAgent = valueAgentId(e.old_value);
           const newAgent = valueAgentId(e.new_value);
           if (newAgent === e.actor_id && oldAgent && frUserIds.has(oldAgent) && oldAgent !== e.actor_id) {
-            markContinueFromFR(e.contact_id, e.actor_id, oldAgent);
+            markContinueFromFR(e.contact_id, e.actor_id, oldAgent, e.occurred_at, e.event_type);
           }
         }
       }
