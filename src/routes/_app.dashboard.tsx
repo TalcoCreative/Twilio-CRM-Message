@@ -106,7 +106,7 @@ function Dashboard() {
     if (agentId !== "all" && !agentOptions.find((p) => p.id === agentId)) setAgentId("all");
   }, [agentOptions, agentId]);
 
-  const { startISO, endISO } = useMemo(() => {
+  const { startISO, endISO, effectiveStart, effectiveEnd } = useMemo(() => {
     const end = new Date(); end.setHours(23, 59, 59, 999);
     const start = new Date(); start.setHours(0, 0, 0, 0);
     if (range === "today") {}
@@ -115,10 +115,25 @@ function Dashboard() {
     else if (range === "month") start.setDate(1);
     else if (range === "year") { start.setMonth(0); start.setDate(1); }
     else if (range === "custom" && from && to) {
-      return { startISO: new Date(from + "T00:00:00").toISOString(), endISO: new Date(to + "T23:59:59").toISOString() };
+      const cs = new Date(from + "T00:00:00");
+      const ce = new Date(to + "T23:59:59.999");
+      return { startISO: cs.toISOString(), endISO: ce.toISOString(), effectiveStart: cs, effectiveEnd: ce };
     }
-    return { startISO: start.toISOString(), endISO: end.toISOString() };
+    return { startISO: start.toISOString(), endISO: end.toISOString(), effectiveStart: start, effectiveEnd: end };
   }, [range, from, to]);
+
+  // Auto-fill custom range from current preset saat user pindah ke "custom",
+  // biar 7 hari preset & 7 hari custom benar-benar sama.
+  useEffect(() => {
+    if (range === "custom" && (!from || !to)) {
+      const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      setFrom(fmt(effectiveStart));
+      setTo(fmt(effectiveEnd));
+    }
+  }, [range]);
+
+  const rangeDayCount = Math.round((effectiveEnd.getTime() - effectiveStart.getTime()) / 86400000) + 1;
+  const fmtLabel = (d: Date) => d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 
   // filter helper: which user IDs are in scope
   const scopeIds = useMemo(() => {
