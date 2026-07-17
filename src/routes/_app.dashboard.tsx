@@ -954,6 +954,12 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
                 firstResponses.push({ actor_id: e.actor_id, contact_id: e.contact_id, seconds: frSec, at: e.occurred_at });
               }
               (frTouchers[e.contact_id] = frTouchers[e.contact_id] || []).push(e.actor_id);
+              // Kalau contact ini sudah pernah dibalas FR lain SEBELUM rentang,
+              // reply pertama in-range dari FR berbeda tetap dihitung sbg continue.
+              const prior = priorFRActor[e.contact_id];
+              if (prior && prior !== e.actor_id) {
+                markContinueFromFR(e.contact_id, e.actor_id, prior, e.occurred_at, "chat_out");
+              }
             } else if (firstFRActor[e.contact_id] !== e.actor_id) {
               markContinueFromFR(e.contact_id, e.actor_id, firstFRActor[e.contact_id], e.occurred_at, "chat_out");
             }
