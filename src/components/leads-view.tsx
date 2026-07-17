@@ -41,12 +41,20 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   const [stages, setStages] = useState<Stage[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [agents, setAgents] = useState<Profile[]>([]);
+  const [contentCodes, setContentCodes] = useState<ContentCode[]>([]);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [openNew, setOpenNew] = useState(false);
   const [selected, setSelected] = useState<Contact | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [form, setForm] = useState({ whatsapp_number: "", full_name: "", domicile: "", notes: "" });
+  const [sortKey, setSortKey] = useState<SortKey>("created_at");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  function toggleSort(k: SortKey) {
+    if (sortKey === k) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else { setSortKey(k); setSortDir("asc"); }
+  }
 
   function toggleCheck(id: string) {
     setCheckedIds((prev) => {
