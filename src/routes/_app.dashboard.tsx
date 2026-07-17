@@ -1286,10 +1286,11 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         invSentTotal, invAcceptedNonFR, invRejected, invPending,
         firstDetails: scopedFirstDetails, continueDetails: scopedContinueDetails,
         closingDetails: scopedClosingDetails, shareDetails: scopedShareDetails,
-        invSentDetails: invScoped,
-        invAcceptedDetails: invScoped.filter((i) => i.status === "accepted" && !frUserIds.has(i.to_user_id)),
-        invRejectedDetails: invScoped.filter((i) => i.status === "rejected"),
-        invPendingDetails: invScoped.filter((i) => i.status === "pending"),
+        invSentDetails: invSentScoped,
+        invAcceptedDetails: invRespondedScoped.filter((i: any) => i.status === "accepted" && !frUserIds.has(i.to_user_id)),
+        invRejectedDetails: invRespondedScoped.filter((i: any) => i.status === "rejected"),
+        invPendingDetails: invSentScoped.filter((i: any) => i.status === "pending"),
+
         nameById, contactById,
       });
     })();
