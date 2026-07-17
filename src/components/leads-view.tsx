@@ -440,6 +440,11 @@ function LeadDetailDialog({ contact, stages, products, agents, contentCodes, onC
   if (!contact || !form) return null;
 
   async function save() {
+    const isAds = form._source_type === "ads";
+    const codeRec = isAds && form.content_code_id ? contentCodes.find((c) => c.id === form.content_code_id) : null;
+    const finalSource = isAds
+      ? (codeRec ? `Ads: ${codeRec.code}${codeRec.name ? " — " + codeRec.name : ""}` : "Ads")
+      : (form.source && !form.source.toLowerCase().startsWith("ads") ? form.source : "Organik");
     const { error } = await supabase.from("contacts").update({
       full_name: form.full_name,
       whatsapp_number: form.whatsapp_number,
@@ -447,7 +452,8 @@ function LeadDetailDialog({ contact, stages, products, agents, contentCodes, onC
       stage_id: form.stage_id,
       interested_product_id: form.interested_product_id || null,
       estimated_revenue: Number(form.estimated_revenue) || 0,
-      source: form.source,
+      source: finalSource,
+      content_code_id: isAds ? (form.content_code_id || null) : null,
       notes: form.notes,
       document_url: form.document_url,
       chief_complaint: form.chief_complaint,
