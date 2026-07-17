@@ -867,8 +867,13 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       // reset saat closing invitation accepted).
       const cycleStartTs: Record<string, number> = {};
       const pendingInboundTs: Record<string, number> = {};
+      // firstFRActor: FR pertama yang membalas contact DI DALAM rentang.
+      // priorFRActor: FR pertama SEBELUM rentang (dipakai HANYA untuk deteksi
+      // continue conversation — tidak menekan firstChats supaya Total First
+      // Response tetap ikut rentang waktu).
       const firstFRActor: Record<string, string> = {};
       const firstFRTs: Record<string, number> = {};
+      const priorFRActor: Record<string, string> = {};
       const frTouchers: Record<string, string[]> = {};
 
       const eventMessageType = (event: any) => String(event?.new_value?.type || "").toUpperCase();
@@ -880,10 +885,8 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
       const markContinueFromFR = (contactId: string, actorId: string, previousFrId: string | null | undefined, at: string, via: string) => {
         if (!contactId || !actorId || !frUserIds.has(actorId)) return;
-        if (previousFrId && frUserIds.has(previousFrId) && previousFrId !== actorId && !firstFRActor[contactId]) {
-          firstFRActor[contactId] = previousFrId;
-        }
-        const initial = firstFRActor[contactId] ? [firstFRActor[contactId]] : [];
+        const seed = firstFRActor[contactId] || priorFRActor[contactId];
+        const initial = seed ? [seed] : [];
         const list = frTouchers[contactId] = frTouchers[contactId] || initial;
         if (previousFrId && frUserIds.has(previousFrId) && previousFrId !== actorId && !list.includes(previousFrId)) {
           list.unshift(previousFrId);
