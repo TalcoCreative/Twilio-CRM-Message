@@ -810,7 +810,11 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const eventMessageType = (event: any) => String(event?.new_value?.type || "").toUpperCase();
       const isInternalNoteEvent = (event: any) => eventMessageType(event) === "INTERNAL_NOTE";
       const valueAgentId = (value: any) => (typeof value?.agent_id === "string" ? value.agent_id : null);
-      const markContinueFromFR = (contactId: string, actorId: string, previousFrId?: string | null) => {
+
+      // Captured details untuk drill-down (klik KPI card).
+      const continueDetails: { contact_id: string; actor_id: string; previous_actor_id: string | null; at: string; via: string }[] = [];
+
+      const markContinueFromFR = (contactId: string, actorId: string, previousFrId: string | null | undefined, at: string, via: string) => {
         if (!contactId || !actorId || !frUserIds.has(actorId)) return;
         if (previousFrId && frUserIds.has(previousFrId) && previousFrId !== actorId && !firstFRActor[contactId]) {
           firstFRActor[contactId] = previousFrId;
@@ -823,6 +827,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         if (list.some((id) => id !== actorId) && !list.includes(actorId)) {
           list.push(actorId);
           ensureFR(actorId).continuedFromOther++;
+          continueDetails.push({ contact_id: contactId, actor_id: actorId, previous_actor_id: previousFrId || null, at, via });
         }
         ensureFR(actorId).leadsHandledContactIds.add(contactId);
       };
