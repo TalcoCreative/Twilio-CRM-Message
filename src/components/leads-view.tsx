@@ -365,8 +365,29 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   );
 }
 
-function LeadDetailDialog({ contact, stages, products, agents, onClose, onSaved, onDelete }: {
+function SortableTh({ label, k, sortKey, sortDir, onSort, align }: {
+  label: string; k: SortKey; sortKey: SortKey; sortDir: SortDir;
+  onSort: (k: SortKey) => void; align?: "left" | "right";
+}) {
+  const active = sortKey === k;
+  const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th className={`p-3 font-medium ${align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${active ? "text-foreground" : ""}`}
+      >
+        {label}
+        <Icon className="size-3" />
+      </button>
+    </th>
+  );
+}
+
+function LeadDetailDialog({ contact, stages, products, agents, contentCodes, onClose, onSaved, onDelete }: {
   contact: Contact | null; stages: Stage[]; products: Product[]; agents: Profile[];
+  contentCodes: ContentCode[];
   onClose: () => void; onSaved: () => void; onDelete: (id: string) => void;
 }) {
   const navigate = useNavigate();
