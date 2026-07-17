@@ -149,6 +149,10 @@ function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Performa tim, first response, & pipeline.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Rentang efektif: <span className="font-medium text-foreground">{fmtLabel(effectiveStart)} – {fmtLabel(effectiveEnd)}</span>
+            {" "}<span className="opacity-70">({rangeDayCount} hari)</span>
+          </p>
         </div>
         <div className="flex flex-wrap gap-2 items-end">
           <div>
