@@ -1137,6 +1137,8 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
     })();
   }, [startISO, endISO, slaGreen, slaYellow, profiles, selectedAgent, frUserIds]);
 
+  const [drill, setDrill] = useState<{ kind: "first" | "continue" | "closing" | "share" } | null>(null);
+
   if (!data) return <div className="text-muted-foreground py-10 text-center">Memuat...</div>;
   const fmtTime = (s: number) => !s ? "—" : s < 60 ? `${s}d` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}d` : `${Math.floor(s / 3600)}j ${Math.floor((s % 3600) / 60)}m`;
   const slaPie = [
@@ -1144,8 +1146,6 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
     { name: `Kuning (${slaGreen}-${slaYellow}m)`, value: data.slaCount.yellow, fill: "#f59e0b" },
     { name: `Merah (>${slaYellow}m)`, value: data.slaCount.red, fill: "#ef4444" },
   ];
-
-  const [drill, setDrill] = drillState;
 
   return (
     <>
