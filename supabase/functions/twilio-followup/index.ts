@@ -3,7 +3,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
   CORS_HEADERS, jsonResponse, loadTwilioConfig, twilioSendContentTemplate,
-  loadContentSids, normalizeContentVars, getEnv, validateConfig,
+  loadContentSids, normalizeContentVars, getEnv, validateConfig, basicAuthHeader,
 } from "../_shared/twilio.ts";
 
 Deno.serve(async (req) => {
