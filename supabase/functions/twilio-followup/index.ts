@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
 
     // Persist message + update conversation preview
     const { data: msg, error: insErr } = await admin.from("messages").insert({
-      conversation_id, direction: "OUTBOUND", type: "TEMPLATE" as any,
+      conversation_id, direction: "OUTBOUND", type: "TEXT" as any,
       content: renderedBody,
       sent_by_id: user.id,
       fonnte_message_id: send.sid || null,
