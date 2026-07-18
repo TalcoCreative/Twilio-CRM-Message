@@ -3,7 +3,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
   CORS_HEADERS, jsonResponse, loadTwilioConfig, twilioSendContentTemplate,
-  loadContentSids, normalizeContentVars, getEnv, validateConfig,
+  loadContentSids, normalizeContentVars, getEnv, validateConfig, basicAuthHeader,
 } from "../_shared/twilio.ts";
 
 Deno.serve(async (req) => {
@@ -76,10 +76,32 @@ Deno.serve(async (req) => {
       }, send.status && send.status >= 400 ? send.status : 502);
     }
 
+    // Fetch template body from Twilio Content API so we can persist the real message text
+    let renderedBody = "";
+    try {
+      const cRes = await fetch(`https://content.twilio.com/v1/Content/${encodeURIComponent(sids.lead_follow_up)}`, {
+        headers: { Authorization: basicAuthHeader(cfg) },
+      });
+      const cJson: any = await cRes.json().catch(() => ({}));
+      const types = cJson?.types || {};
+      const body: string =
+        types["twilio/text"]?.body ||
+        types["twilio/media"]?.body ||
+        types["twilio/quick-reply"]?.body ||
+        types["twilio/call-to-action"]?.body ||
+        types["twilio/card"]?.body ||
+        types["twilio/list-picker"]?.body ||
+        "";
+      renderedBody = String(body || "").replace(/\{\{\s*(\d+)\s*\}\}/g, (_m, k) => contentVariables[String(k)] ?? "");
+    } catch (e) {
+      console.warn("[twilio-followup] fetch content template failed", e);
+    }
+    if (!renderedBody) renderedBody = `[Follow Up] ${c.full_name || ""}`.trim();
+
     // Persist message + update conversation preview
     const { data: msg, error: insErr } = await admin.from("messages").insert({
       conversation_id, direction: "OUTBOUND", type: "TEMPLATE" as any,
-      content: `[Follow Up] ${c.full_name || ""}`.trim(),
+      content: renderedBody,
       sent_by_id: user.id,
       fonnte_message_id: send.sid || null,
       status: "SENT",
@@ -89,12 +111,12 @@ Deno.serve(async (req) => {
       direction: "OUTBOUND", level: "info", event: "followup",
       message_sid: send.sid || null, conversation_id, to_number: toNumber,
       status: "sent",
-      payload: { content_sid: sids.lead_follow_up, variables: contentVariables } as any,
+      payload: { content_sid: sids.lead_follow_up, variables: contentVariables, body: renderedBody } as any,
     });
 
     await admin.from("conversations").update({
       last_message_at: new Date().toISOString(),
-      last_message_preview: "[Follow Up Template]",
+      last_message_preview: renderedBody.slice(0, 160),
       last_replied_by_id: user.id,
     }).eq("id", conversation_id);
 
