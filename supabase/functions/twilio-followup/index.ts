@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     let renderedBody = "";
     try {
       const cRes = await fetch(`https://content.twilio.com/v1/Content/${encodeURIComponent(sids.lead_follow_up)}`, {
-        headers: { Authorization: (await import("../_shared/twilio.ts")).basicAuthHeader(cfg) },
+        headers: { Authorization: basicAuthHeader(cfg) },
       });
       const cJson: any = await cRes.json().catch(() => ({}));
       const types = cJson?.types || {};
