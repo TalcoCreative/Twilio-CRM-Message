@@ -76,13 +76,19 @@ Deno.serve(async (req) => {
       }, send.status && send.status >= 400 ? send.status : 502);
     }
 
-    // Fetch template body from Twilio Content API so we can persist the real message text
+    // Fetch template body from Twilio Content API so we can persist the real message text.
+    // API Key auth often lacks Content API scope → try that first, fall back to Account SID + Auth Token.
     let renderedBody = "";
     try {
-      const cRes = await fetch(`https://content.twilio.com/v1/Content/${encodeURIComponent(sids.lead_follow_up)}`, {
-        headers: { Authorization: basicAuthHeader(cfg) },
-      });
+      const url = `https://content.twilio.com/v1/Content/${encodeURIComponent(sids.lead_follow_up)}`;
+      const tryFetch = (auth: string) => fetch(url, { headers: { Authorization: auth } });
+      let cRes = await tryFetch(basicAuthHeader(cfg));
+      if (!cRes.ok && cfg.accountSid && cfg.authToken) {
+        console.log(`[twilio-followup] content API primary auth failed (${cRes.status}), retrying with Auth Token`);
+        cRes = await tryFetch("Basic " + btoa(`${cfg.accountSid}:${cfg.authToken}`));
+      }
       const cJson: any = await cRes.json().catch(() => ({}));
+      console.log(`[twilio-followup] content fetch status=${cRes.status} keys=${Object.keys(cJson?.types || {}).join(",") || "-"}`);
       const types = cJson?.types || {};
       const body: string =
         types["twilio/text"]?.body ||
@@ -96,7 +102,12 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.warn("[twilio-followup] fetch content template failed", e);
     }
-    if (!renderedBody) renderedBody = `[Follow Up] ${c.full_name || ""}`.trim();
+    if (!renderedBody) {
+      // Fallback: render variables inline so agent still sees something meaningful
+      const vars = Object.keys(contentVariables).sort().map((k) => contentVariables[k]).filter(Boolean).join(" • ");
+      renderedBody = vars ? `[Follow Up] ${vars}` : `[Follow Up] ${c.full_name || ""}`.trim();
+    }
+
 
     // Persist message + update conversation preview
     const { data: msg, error: insErr } = await admin.from("messages").insert({
