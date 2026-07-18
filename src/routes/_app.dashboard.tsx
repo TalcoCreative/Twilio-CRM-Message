@@ -1325,10 +1325,6 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           hint="Rata-rata waktu dari lead masuk sampai balasan pertama FR." />
         <KPI icon={Clock} label="Avg Handle Time" value={fmtTime(data.avgHandle)} color="text-blue-500"
           hint="Rata-rata durasi dari balasan pertama FR sampai invitation closing diterima. Dihitung untuk semua FR yang ikut menangani lead tsb." />
-        <KPI icon={Timer} label="Avg First Response" value={fmtTime(data.avgFirstRespSec)} color="text-emerald-500"
-          hint="Rata-rata waktu dari lead masuk sampai balasan pertama FR." />
-        <KPI icon={Clock} label="Avg Handle Time" value={fmtTime(data.avgHandle)} color="text-blue-500"
-          hint="Rata-rata durasi dari balasan pertama FR sampai invitation closing diterima. Dihitung untuk semua FR yang ikut menangani lead tsb." />
         {!selectedAgent && (
           <KPI icon={MessageCircle} label="Leads Baru" value={data.newLeads} color="text-blue-500"
             hint="Jumlah kontak baru yang masuk pada rentang tanggal terpilih." />
