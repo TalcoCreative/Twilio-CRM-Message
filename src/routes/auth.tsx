@@ -33,10 +33,22 @@ function AuthPage() {
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setSubmitting(false);
+      toast.error(error.message);
+      return;
+    }
+    const { data: prof } = await supabase.from("profiles").select("is_active, full_name").eq("id", data.user.id).maybeSingle();
+    if (prof?.is_active === false) {
+      await supabase.auth.signOut();
+      setSubmitting(false);
+      toast.error("Akun ini telah dinonaktifkan. Hubungi Super Admin.");
+      return;
+    }
     setSubmitting(false);
-    if (error) toast.error(error.message);
-    else { toast.success("Berhasil masuk"); router.navigate({ to: "/dashboard" }); }
+    toast.success(`Selamat datang${prof?.full_name ? `, ${prof.full_name}` : ""}`);
+    router.navigate({ to: "/dashboard" });
   }
 
   return (
