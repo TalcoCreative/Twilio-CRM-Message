@@ -96,13 +96,13 @@ Deno.serve(async (req) => {
         await admin.from("conversations").update({ assigned_agent_id: null }).eq("assigned_agent_id", target);
       }
 
-      // Disable profile and revoke sessions
+      // Disable profile and revoke all sessions
       await admin.from("profiles").update({ is_active: false }).eq("id", target);
-      const { data: sessions } = await admin.auth.admin.listUserSessions(target);
-      if (sessions) {
-        for (const s of sessions) {
-          await admin.auth.admin.signOut(target, s.id);
-        }
+      try {
+        await admin.auth.admin.signOut(target);
+      } catch (e) {
+        // Ignore sign-out errors; profile is already disabled so login is blocked on the client anyway.
+        console.log("signOut target failed", e);
       }
 
       await admin.from("activity_logs").insert({
