@@ -1,4 +1,4 @@
-// Admin-only: create or delete agent users (auto-confirmed, no email verification)
+// Admin-only: create, update, disable, reactivate, reassign, or delete agent users
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
       if (cErr || !created.user) return j({ error: cErr?.message || "Gagal membuat user" }, 400);
 
       const uid = created.user.id;
-      await admin.from("profiles").upsert({ id: uid, email, full_name, position, phone }, { onConflict: "id" });
+      await admin.from("profiles").upsert({ id: uid, email, full_name, position, phone, is_active: true }, { onConflict: "id" });
 
       // Always persist the selected role. Some environments don't run the auth trigger
       // that used to add the default agent role, so relying on it leaves accounts unrestricted.
@@ -71,6 +71,74 @@ Deno.serve(async (req) => {
         metadata: { email, full_name, position, phone, role },
       });
       return j({ ok: true, id: uid });
+    }
+
+    if (action === "disable") {
+      const target = String(body.user_id || "");
+      if (!target) return j({ error: "user_id wajib" }, 400);
+      if (target === u.user.id) return j({ error: "Tidak bisa nonaktifkan akun sendiri" }, 400);
+
+      const { data: prof } = await admin.from("profiles").select("email,full_name").eq("id", target).maybeSingle();
+      if (!prof) return j({ error: "Agent tidak ditemukan" }, 404);
+
+      // Reassign leads & conversations if requested
+      const reassignTo = body.reassign_to ? String(body.reassign_to) : null;
+      const reassignPayload: any = { user_id: u.user.id, target_id: target };
+      if (reassignTo) {
+        if (reassignTo === target) return j({ error: "Tidak bisa reassign ke agent yang sama" }, 400);
+        const { data: toProf } = await admin.from("profiles").select("id").eq("id", reassignTo).eq("is_active", true).maybeSingle();
+        if (!toProf) return j({ error: "Agent target reassign tidak aktif" }, 400);
+        await admin.from("contacts").update({ assigned_agent_id: reassignTo }).eq("assigned_agent_id", target);
+        await admin.from("conversations").update({ assigned_agent_id: reassignTo }).eq("assigned_agent_id", target);
+        reassignPayload.reassign_to = reassignTo;
+      } else {
+        await admin.from("contacts").update({ assigned_agent_id: null }).eq("assigned_agent_id", target);
+        await admin.from("conversations").update({ assigned_agent_id: null }).eq("assigned_agent_id", target);
+      }
+
+      // Disable profile and revoke sessions
+      await admin.from("profiles").update({ is_active: false }).eq("id", target);
+      const { data: sessions } = await admin.auth.admin.listUserSessions(target);
+      if (sessions) {
+        for (const s of sessions) {
+          await admin.auth.admin.signOut(target, s.id);
+        }
+      }
+
+      await admin.from("activity_logs").insert({
+        user_id: u.user.id, action: "disable_agent", entity_type: "profile", entity_id: target,
+        metadata: { email: prof.email, full_name: prof.full_name, reassign_to: reassignTo || null },
+      });
+      return j({ ok: true });
+    }
+
+    if (action === "reactivate") {
+      const target = String(body.user_id || "");
+      if (!target) return j({ error: "user_id wajib" }, 400);
+      const { data: prof } = await admin.from("profiles").select("email,full_name").eq("id", target).maybeSingle();
+      await admin.from("profiles").update({ is_active: true }).eq("id", target);
+      await admin.from("activity_logs").insert({
+        user_id: u.user.id, action: "reactivate_agent", entity_type: "profile", entity_id: target,
+        metadata: { email: prof?.email, full_name: prof?.full_name },
+      });
+      return j({ ok: true });
+    }
+
+    if (action === "reassign") {
+      const from = String(body.from_user_id || "");
+      const to = String(body.to_user_id || "");
+      if (!from || !to) return j({ error: "from_user_id dan to_user_id wajib" }, 400);
+      if (from === to) return j({ error: "Tidak bisa reassign ke agent yang sama" }, 400);
+      const { data: toProf } = await admin.from("profiles").select("id").eq("id", to).eq("is_active", true).maybeSingle();
+      if (!toProf) return j({ error: "Agent target tidak aktif" }, 400);
+
+      const { data: contactsMoved } = await admin.from("contacts").update({ assigned_agent_id: to }).eq("assigned_agent_id", from).select("id");
+      const { data: convsMoved } = await admin.from("conversations").update({ assigned_agent_id: to }).eq("assigned_agent_id", from).select("id");
+      await admin.from("activity_logs").insert({
+        user_id: u.user.id, action: "reassign_agent_data", entity_type: "profile", entity_id: from,
+        metadata: { to_user_id: to, contacts_count: (contactsMoved || []).length, conversations_count: (convsMoved || []).length },
+      });
+      return j({ ok: true, contacts_count: (contactsMoved || []).length, conversations_count: (convsMoved || []).length });
     }
 
     if (action === "delete") {
