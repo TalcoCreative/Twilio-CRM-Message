@@ -708,6 +708,7 @@ function TeamTab() {
   const [busy, setBusy] = useState(false);
   const [me, setMe] = useState<string | null>(null);
   const [isSuper, setIsSuper] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
 
   // Add-agent form
   const [fullName, setFullName] = useState("");
@@ -728,7 +729,10 @@ function TeamTab() {
     const roleMap: Record<string, string[]> = {};
     (roles || []).forEach((r: any) => { roleMap[r.user_id] = [...(roleMap[r.user_id] || []), r.role]; });
     setIsSuper((roleMap[u.user?.id || ""] || []).includes("super_admin"));
-    setRows((profiles || []).map((p: any) => ({ ...p, roles: roleMap[p.id] || [] })));
+    setRows((profiles || []).map((p: any) => ({ ...p, roles: roleMap[p.id] || [] })).sort((a, b) => {
+      if (a.is_active === b.is_active) return (a.full_name || a.email || "").localeCompare(b.full_name || b.email || "");
+      return a.is_active ? -1 : 1;
+    }));
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
@@ -769,13 +773,31 @@ function TeamTab() {
     finally { setBusy(false); }
   }
 
-  async function deleteAgent(id: string, name: string) {
-    if (id === me) { toast.error("Tidak bisa hapus akun sendiri"); return; }
-    if (!confirm(`Hapus agent "${name}"? Aksi ini permanen.`)) return;
+  async function disableAgent(target: string, reassignTo: string | null) {
     setBusy(true);
     try {
-      await callManageAgent({ action: "delete", user_id: id });
-      toast.success("Agent dihapus");
+      await callManageAgent({ action: "disable", user_id: target, reassign_to: reassignTo });
+      toast.success(reassignTo ? "Agent dinonaktifkan dan datanya dipindahkan" : "Agent dinonaktifkan");
+      load();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function reactivateAgent(target: string) {
+    setBusy(true);
+    try {
+      await callManageAgent({ action: "reactivate", user_id: target });
+      toast.success("Agent diaktifkan kembali");
+      load();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function hardDeleteAgent(target: string) {
+    setBusy(true);
+    try {
+      await callManageAgent({ action: "delete", user_id: target });
+      toast.success("Agent dihapus permanen");
       load();
     } catch (e: any) { toast.error(e.message); }
     finally { setBusy(false); }
@@ -794,6 +816,10 @@ function TeamTab() {
       </Card>
     );
   }
+
+  const activeRows = rows.filter((r) => r.is_active);
+  const inactiveRows = rows.filter((r) => !r.is_active);
+  const displayedRows = showInactive ? inactiveRows : rows;
 
   return (
     <div className="space-y-4 mt-4">
@@ -847,16 +873,24 @@ function TeamTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Tim Agent ({rows.length})</CardTitle>
-          <CardDescription>Edit nama, jabatan, dan nomor WhatsApp — klik <b>Simpan</b> untuk menyimpan perubahan.</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Tim Agent ({activeRows.length} aktif{inactiveRows.length ? `, ${inactiveRows.length} nonaktif` : ""})</CardTitle>
+              <CardDescription>Edit nama, jabatan, dan nomor WhatsApp — klik <b>Simpan</b> untuk menyimpan perubahan.</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setShowInactive((v) => !v)}>
+              {showInactive ? "Tampilkan semua" : "Lihat nonaktif"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="text-sm text-muted-foreground">Memuat...</div>
           ) : (
             <div className="border rounded-md divide-y">
-              {rows.map((r) => (
+              {displayedRows.map((r) => (
                 <AgentRow key={r.id} r={r} me={me} busy={busy}
+                  activeAgents={activeRows}
                   onSave={async (patch) => {
                     await callManageAgent({ action: "update", user_id: r.id, ...patch });
                     toast.success("Perubahan disimpan");
@@ -866,10 +900,12 @@ function TeamTab() {
                     await callManageAgent({ action: "reset_password", user_id: r.id, password });
                     toast.success("Password berhasil diganti");
                   }}
-                  onDelete={() => deleteAgent(r.id, r.full_name || r.email)}
+                  onDisable={(reassignTo) => disableAgent(r.id, reassignTo)}
+                  onReactivate={() => reactivateAgent(r.id)}
+                  onHardDelete={() => hardDeleteAgent(r.id)}
                 />
               ))}
-              {!rows.length && <p className="p-3 text-sm text-muted-foreground">Belum ada anggota tim.</p>}
+              {!displayedRows.length && <p className="p-3 text-sm text-muted-foreground">Belum ada anggota tim.</p>}
             </div>
           )}
         </CardContent>
@@ -878,11 +914,14 @@ function TeamTab() {
   );
 }
 
-function AgentRow({ r, me, busy, onSave, onResetPassword, onDelete }: {
+function AgentRow({ r, me, busy, activeAgents, onSave, onResetPassword, onDisable, onReactivate, onHardDelete }: {
   r: any; me: string | null; busy: boolean;
+  activeAgents: any[];
   onSave: (patch: any) => Promise<void>;
   onResetPassword: (password: string) => Promise<void>;
-  onDelete: () => void;
+  onDisable: (reassignTo: string | null) => Promise<void>;
+  onReactivate: () => Promise<void>;
+  onHardDelete: () => Promise<void>;
 }) {
   const [fullName, setFullName] = useState(r.full_name || "");
   const [position, setPosition] = useState(r.position || "");
@@ -892,6 +931,10 @@ function AgentRow({ r, me, busy, onSave, onResetPassword, onDelete }: {
   const [showPwd, setShowPwd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [disableOpen, setDisableOpen] = useState(false);
+  const [reassignTo, setReassignTo] = useState<string>("");
+  const [hardDeleteOpen, setHardDeleteOpen] = useState(false);
+
   useEffect(() => {
     setFullName(r.full_name || ""); setPosition(r.position || ""); setPhone(r.phone || "");
     setRole((r.roles && r.roles[0]) || "agent");
@@ -923,26 +966,44 @@ function AgentRow({ r, me, busy, onSave, onResetPassword, onDelete }: {
     finally { setResetting(false); }
   }
 
+  const others = activeAgents.filter((a) => a.id !== r.id);
+
   return (
     <div className="p-3 space-y-2">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="text-xs text-muted-foreground min-w-0 flex-1">
           <span className="font-mono">{r.email}</span>
           {r.id === me && <Badge variant="outline" className="ml-2 text-[10px]">Anda</Badge>}
+          {!r.is_active && <Badge variant="destructive" className="ml-1 text-[10px]">Nonaktif</Badge>}
           {r.roles.map((role: string) => (
             <Badge key={role} variant={role.includes("admin") ? "default" : "secondary"} className="ml-1 text-[10px]">{role}</Badge>
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <TestNotifyButton agent={{ ...r, full_name: fullName, phone }} />
-          <Button size="sm" variant="outline" onClick={() => setShowPwd((v) => !v)}>
-            {showPwd ? "Batal" : "Ganti Password"}
-          </Button>
-          <Button size="sm" onClick={save} disabled={!dirty || saving}>
-            {saving && <Loader2 className="size-3.5 mr-1 animate-spin" />} Simpan
-          </Button>
+          {r.is_active && <TestNotifyButton agent={{ ...r, full_name: fullName, phone }} />}
+          {r.is_active && (
+            <Button size="sm" variant="outline" onClick={() => setShowPwd((v) => !v)}>
+              {showPwd ? "Batal" : "Ganti Password"}
+            </Button>
+          )}
+          {r.is_active && (
+            <Button size="sm" onClick={save} disabled={!dirty || saving}>
+              {saving && <Loader2 className="size-3.5 mr-1 animate-spin" />} Simpan
+            </Button>
+          )}
+          {r.is_active ? (
+            <Button size="sm" variant="ghost" className="text-amber-600 hover:bg-amber-500/10"
+              disabled={busy || r.id === me} onClick={() => setDisableOpen(true)}>
+              Nonaktifkan
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" className="text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
+              disabled={busy} onClick={onReactivate}>
+              Aktifkan
+            </Button>
+          )}
           <Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10"
-            disabled={busy || r.id === me} onClick={onDelete}>
+            disabled={busy || r.id === me} onClick={() => setHardDeleteOpen(true)}>
             Hapus
           </Button>
         </div>
@@ -950,20 +1011,20 @@ function AgentRow({ r, me, busy, onSave, onResetPassword, onDelete }: {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">Nama</Label>
-          <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Nama lengkap" className="h-9 text-sm" />
+          <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Nama lengkap" className="h-9 text-sm" disabled={!r.is_active} />
         </div>
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">Jabatan</Label>
-          <Input value={position} onChange={(e) => setPosition(e.target.value)} placeholder="cth: Dokter" className="h-9 text-sm" />
+          <Input value={position} onChange={(e) => setPosition(e.target.value)} placeholder="cth: Dokter" className="h-9 text-sm" disabled={!r.is_active} />
         </div>
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">No. WhatsApp</Label>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="628..." className="h-9 text-sm" />
+          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="628..." className="h-9 text-sm" disabled={!r.is_active} />
         </div>
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">Role</Label>
           <select value={role} onChange={(e) => setRole(e.target.value)}
-            disabled={r.id === me}
+            disabled={r.id === me || !r.is_active}
             className="h-9 w-full rounded-md border bg-background px-2 text-sm">
             <option value="agent">Agent</option>
             <option value="first_response">First Response</option>
@@ -972,7 +1033,7 @@ function AgentRow({ r, me, busy, onSave, onResetPassword, onDelete }: {
           </select>
         </div>
       </div>
-      {showPwd && (
+      {showPwd && r.is_active && (
         <div className="flex items-end gap-2 pt-1 border-t mt-2">
           <div className="flex-1 space-y-1">
             <Label className="text-[11px] text-muted-foreground">Password Baru (min 6 karakter)</Label>
@@ -984,6 +1045,61 @@ function AgentRow({ r, me, busy, onSave, onResetPassword, onDelete }: {
           </Button>
         </div>
       )}
+
+      {/* Disable confirmation dialog */}
+      <Dialog open={disableOpen} onOpenChange={setDisableOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nonaktifkan agent?</DialogTitle>
+            <DialogDescription>
+              Agent <b>{fullName || r.email}</b> tidak akan bisa login lagi. Pilih apa yang terjadi pada lead & chat yang sedang ditangani.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Nasib lead &amp; chat</Label>
+              <select value={reassignTo} onChange={(e) => setReassignTo(e.target.value)}
+                className="h-10 w-full rounded-md border bg-background px-2 text-sm">
+                <option value="">Biarkan unassigned</option>
+                {others.map((a) => (
+                  <option key={a.id} value={a.id}>Pindahkan ke {a.full_name || a.email}</option>
+                ))}
+              </select>
+            </div>
+            <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
+              {!reassignTo
+                ? "Lead dan conversation yang diassign ke agent ini akan menjadi unassigned."
+                : `Semua lead & conversation yang diassign ke agent ini akan dipindahkan ke agent yang dipilih.`}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDisableOpen(false)}>Batal</Button>
+            <Button variant="default" className="bg-amber-600 hover:bg-amber-700"
+              disabled={busy} onClick={() => { onDisable(reassignTo || null); setDisableOpen(false); setReassignTo(""); }}>
+              Nonaktifkan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hard delete confirmation dialog */}
+      <Dialog open={hardDeleteOpen} onOpenChange={setHardDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hapus akun permanen?</DialogTitle>
+            <DialogDescription>
+              Aksi ini <b>tidak bisa dibatalkan</b>. Akun auth, profil, role, dan shift agent <b>{fullName || r.email}</b> akan dihapus selamanya.
+              Lead, chat, dan log tetap tersimpan, tapi referensi agent menjadi kosong.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHardDeleteOpen(false)}>Batal</Button>
+            <Button variant="destructive" disabled={busy} onClick={() => { onHardDelete(); setHardDeleteOpen(false); }}>
+              Hapus Permanen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
