@@ -52,7 +52,7 @@ function BroadcastPage() {
           .limit(2000),
         supabase.from("products").select("id,name").eq("is_active", true).order("sort_order"),
         supabase.from("stages").select("id,name,color").order("order_index"),
-        supabase.from("profiles").select("id, full_name, email").order("full_name"),
+        supabase.from("profiles").select("id, full_name, email").eq("is_active", true).order("full_name"),
         supabase.from("messages")
           .select("conversation:conversations!inner(contact_id)")
           .eq("direction", "INBOUND")

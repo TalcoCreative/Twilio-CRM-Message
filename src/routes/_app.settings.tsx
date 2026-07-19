@@ -721,7 +721,7 @@ function TeamTab() {
     setLoading(true);
     const [{ data: u }, { data: profiles }, { data: roles }] = await Promise.all([
       supabase.auth.getUser(),
-      supabase.from("profiles").select("id, email, full_name, position, phone, created_at").order("created_at"),
+      supabase.from("profiles").select("id, email, full_name, position, phone, created_at, is_active").order("created_at"),
       supabase.from("user_roles").select("user_id, role"),
     ]);
     setMe(u.user?.id || null);
@@ -1207,7 +1207,7 @@ function ShiftsTab() {
     setLoading(true);
     const [{ data: sh }, { data: pf }, { data: asg }] = await Promise.all([
       supabase.from("shifts").select("*").order("start_time"),
-      supabase.from("profiles").select("id, full_name, email, position"),
+      supabase.from("profiles").select("id, full_name, email, position").eq("is_active", true),
       supabase.from("agent_shifts").select("*"),
     ]);
     setShifts((sh as any[]) || []);

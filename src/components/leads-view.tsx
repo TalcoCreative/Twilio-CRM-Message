@@ -92,7 +92,7 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
       supabase.from("contacts").select("*, stages(name, color), conversations(assigned_agent_id)").order("created_at", { ascending: false }),
       supabase.from("stages").select("*").order("order_index"),
       supabase.from("products").select("id, name").order("sort_order"),
-      supabase.from("profiles").select("id, full_name, email"),
+      supabase.from("profiles").select("id, full_name, email").eq("is_active", true),
       supabase.from("content_codes").select("id, code, name, is_active").eq("is_active", true).order("code"),
     ]);
     let list = ((c.data as any) || []).map((row: any) => ({
@@ -422,7 +422,7 @@ function LeadDetailDialog({ contact, stages, products, agents, contentCodes, onC
           .eq("contact_id", contact.id)
           .order("occurred_at", { ascending: false })
           .limit(200),
-        supabase.from("profiles").select("id, full_name, email"),
+        supabase.from("profiles").select("id, full_name, email").eq("is_active", true),
         supabase.from("stages").select("id, name"),
         supabase.from("products").select("id, name"),
       ]);

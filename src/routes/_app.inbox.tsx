@@ -95,7 +95,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
   async function loadMeta() {
     const [p, s, pr, qr, ss] = await Promise.all([
-      supabase.from("profiles").select("id, full_name, email"),
+      supabase.from("profiles").select("id, full_name, email").eq("is_active", true),
       supabase.from("stages").select("id, name, color").order("order_index"),
       supabase.from("products").select("id, name").eq("is_active", true).order("sort_order"),
       supabase.from("templates").select("id, name, content, sort_order").eq("is_quick_reply", true).order("sort_order"),
