@@ -139,7 +139,7 @@ function Dashboard() {
   const [frUserIds, setFrUserIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    supabase.from("profiles").select("id, full_name, email, position").then(({ data }) => setProfiles((data as any) || []));
+    supabase.from("profiles").select("id, full_name, email, position").eq("is_active", true).then(({ data }) => setProfiles((data as any) || []));
     supabase.from("user_roles").select("user_id, role").eq("role", "first_response")
       .then(({ data }) => setFrUserIds(new Set(((data as any) || []).map((r: any) => r.user_id))));
   }, []);

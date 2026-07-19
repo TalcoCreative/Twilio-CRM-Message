@@ -57,7 +57,7 @@ export function FRWeeklySchedule() {
     const { data: roles } = await supabase.from("user_roles").select("user_id").eq("role", "first_response");
     const ids = (roles || []).map((r: any) => r.user_id);
     if (!ids.length) { setAgents([]); return [] as string[]; }
-    const { data: pf } = await supabase.from("profiles").select("id, full_name, email").in("id", ids);
+    const { data: pf } = await supabase.from("profiles").select("id, full_name, email").eq("is_active", true).in("id", ids);
     const list = (((pf as any[]) || []) as Agent[]).sort((a, b) =>
       (a.full_name || a.email || "").localeCompare(b.full_name || b.email || ""),
     );
