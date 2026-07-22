@@ -83,14 +83,24 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   async function loadConversations() {
     // Kalau My Inbox tapi user belum ready, jangan fetch — hindari flash "semua chat".
     if (mineOnly && !user) { setConversations([]); return; }
-    let q = supabase
-      .from("conversations")
-      .select("*, contact:contacts(id, full_name, whatsapp_number, stage_id, interested_product_id, chief_complaint, domicile)")
-      .order("last_message_at", { ascending: false, nullsFirst: false })
-      .limit(300);
-    if (mineOnly && user) q = q.eq("assigned_agent_id", user.id);
-    const { data } = await q;
-    setConversations((data as any) || []);
+    const pageSize = 1000;
+    let from = 0;
+    const all: any[] = [];
+    // Paginate agar semua percakapan terambil (bypass batas default PostgREST 1000).
+    while (true) {
+      let q = supabase
+        .from("conversations")
+        .select("*, contact:contacts(id, full_name, whatsapp_number, stage_id, interested_product_id, chief_complaint, domicile)")
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .range(from, from + pageSize - 1);
+      if (mineOnly && user) q = q.eq("assigned_agent_id", user.id);
+      const { data, error } = await q;
+      if (error || !data || data.length === 0) break;
+      all.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    setConversations(all as any);
   }
 
   async function loadMeta() {
