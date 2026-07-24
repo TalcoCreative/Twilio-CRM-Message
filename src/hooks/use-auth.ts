@@ -9,47 +9,47 @@ export type AuthState = {
   isActive: boolean | null;
 };
 
+/**
+ * Tracks the current Supabase session.
+ *
+ * Note: we intentionally do NOT force-signOut here based on `profiles.is_active`.
+ * The gate for disabled accounts lives at login time (`src/routes/auth.tsx`) and
+ * server-side (the `disable` action in `manage-agent` revokes all sessions via
+ * `admin.auth.admin.signOut(target)`). Re-checking `is_active` on every auth
+ * event was racing with fresh sign-ins and occasionally kicking valid users
+ * (e.g. newly created agents) straight back to the login page.
+ */
 export function useAuth(): AuthState {
   const [state, setState] = useState<AuthState>({ session: null, user: null, loading: true, isActive: null });
 
   useEffect(() => {
-    async function refresh() {
-      const { data } = await supabase.auth.getSession();
-      const session = data.session;
-      if (!session?.user) {
-        setState({ session: null, user: null, loading: false, isActive: null });
-        return;
-      }
-      const { data: prof } = await supabase.from("profiles").select("is_active").eq("id", session.user.id).maybeSingle();
-      if (prof?.is_active === false) {
-        await supabase.auth.signOut();
-        setState({ session: null, user: null, loading: false, isActive: false });
-        return;
-      }
-      setState({ session, user: session.user, loading: false, isActive: prof?.is_active ?? true });
-    }
+    let mounted = true;
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (!session?.user) {
-        setState({ session: null, user: null, loading: false, isActive: null });
-        return;
-      }
-      // Defer profile check to avoid deadlock inside auth callback
-      setTimeout(() => {
-        supabase.from("profiles").select("is_active").eq("id", session.user.id).maybeSingle().then(({ data: prof }) => {
-          if (prof?.is_active === false) {
-            supabase.auth.signOut().then(() => {
-              setState({ session: null, user: null, loading: false, isActive: false });
-            });
-          } else {
-            setState({ session, user: session.user, loading: false, isActive: prof?.is_active ?? true });
-          }
-        });
-      }, 0);
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setState({
+        session: session ?? null,
+        user: session?.user ?? null,
+        loading: false,
+        isActive: session?.user ? true : null,
+      });
     });
 
-    refresh();
-    return () => sub.subscription.unsubscribe();
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      const session = data.session;
+      setState({
+        session: session ?? null,
+        user: session?.user ?? null,
+        loading: false,
+        isActive: session?.user ? true : null,
+      });
+    });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   return state;
