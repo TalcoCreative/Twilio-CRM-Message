@@ -342,6 +342,112 @@ function AdsContentPage() {
         </CardContent>
       </Card>
 
+      {/* BPJS Detected */}
+      <Card className="glow-soft">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="size-4 text-emerald-500" /> BPJS Detected per Konten
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Persentase leads dari tiap kode konten yang menyebut kata "BPJS" pada percakapan mereka (dibaca dari seluruh isi chat). Klik untuk melihat siapa saja yang terdeteksi BPJS.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {bpjsRanked.length === 0 ? (
+            <div className="text-center text-sm text-muted-foreground py-8">Belum ada leads ads pada rentang ini.</div>
+          ) : (
+            <div className="space-y-2">
+              {bpjsRanked.map((r, i) => (
+                <button
+                  key={r.id}
+                  onClick={() => setBpjsPreviewCodeId(r.id)}
+                  disabled={r.bpjs === 0}
+                  className="w-full text-left p-3 rounded-lg bg-accent/40 border border-border/50 hover:bg-accent/70 hover:border-emerald-500/40 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium truncate">{r.name}</div>
+                        <Badge variant="outline" className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shrink-0">
+                          BPJS Detected
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono">{r.code}</div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{r.pct}%</div>
+                        <div className="text-[11px] text-muted-foreground">{r.bpjs} dari {r.total} leads</div>
+                      </div>
+                      <Eye className="size-4 text-muted-foreground" />
+                    </div>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${r.pct}%` }} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* BPJS Preview Dialog — hanya menampilkan leads yang menyebut BPJS */}
+      <Dialog open={!!bpjsPreviewCodeId} onOpenChange={(v) => !v && setBpjsPreviewCodeId(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="size-5 text-emerald-500" />
+              Leads BPJS — {codes.find((c) => c.id === bpjsPreviewCodeId)?.name || "Konten"}
+            </DialogTitle>
+            {bpjsPreviewCodeId && (() => {
+              const s = bpjsByCode[bpjsPreviewCodeId];
+              if (!s) return null;
+              return (
+                <p className="text-xs text-muted-foreground">
+                  {s.bpjs} dari {s.total} leads ({s.total ? Math.round((s.bpjs / s.total) * 100) : 0}%) menyebut BPJS.
+                </p>
+              );
+            })()}
+          </DialogHeader>
+          <div className="flex-1 overflow-auto mt-2">
+            {(() => {
+              const s = bpjsByCode[bpjsPreviewCodeId || ""];
+              if (!s || s.bpjsLeads.length === 0) {
+                return <div className="text-center text-sm text-muted-foreground py-8">Belum ada leads yang menyebut BPJS untuk konten ini.</div>;
+              }
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted text-muted-foreground sticky top-0">
+                      <tr>
+                        <th className="text-left p-2.5 font-medium">Waktu</th>
+                        <th className="text-left p-2.5 font-medium">Nama</th>
+                        <th className="text-left p-2.5 font-medium">Nomor</th>
+                        <th className="text-left p-2.5 font-medium">Produk</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {s.bpjsLeads.map((l) => {
+                        const prod = products.find((p) => p.id === l.interested_product_id);
+                        return (
+                          <tr key={l.id} className="border-t hover:bg-accent/40">
+                            <td className="p-2.5 text-xs">{new Date(l.created_at).toLocaleString("id-ID")}</td>
+                            <td className="p-2.5">{l.full_name || "—"}</td>
+                            <td className="p-2.5 font-mono text-xs">{l.whatsapp_number}</td>
+                            <td className="p-2.5 text-xs">{prod?.name || "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Preview Dialog */}
       <Dialog open={!!previewCodeId} onOpenChange={(v) => !v && setPreviewCodeId(null)}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
