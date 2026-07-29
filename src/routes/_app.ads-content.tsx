@@ -220,7 +220,101 @@ function AdsContentPage() {
   const COLORS = ["#0ea5e9","#06b6d4","#14b8a6","#10b981","#84cc16","#f59e0b","#f97316","#ef4444","#a855f7","#8b5cf6"];
   const chartData = ranked.slice(0, 10).map((c) => ({ name: c.code, hits: c.hits }));
 
-  const leadLog = useMemo(() => filteredLeads.slice(0, 200), [filteredLeads]);
+  const leadLog = filteredLeads;
+
+  function exportXlsx() {
+    try {
+      const wb = XLSX.utils.book_new();
+      const fmtDate = (s: string) => new Date(s).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+      const codeById = (id: string | null) => codes.find((c) => c.id === id);
+      const prodById = (id: string | null) => products.find((p) => p.id === id);
+
+      // Sheet 1: Ringkasan
+      const summary = [
+        ["Ads Content Tracker — Ringkasan Export"],
+        ["Rentang", `${from} s/d ${to}`],
+        ["Dibuat", new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })],
+        [],
+        ["Total Leads", stats.total],
+        ["Dari Ads", stats.ads],
+        ["Organik", stats.organik],
+        ["Belum Terklasifikasi", stats.unassigned],
+        ["Total Kode Konten Aktif", codes.filter((c) => c.is_active).length],
+        ["Total Kode Konten", codes.length],
+        ["Total Leads Menyebut BPJS (Ads)", bpjsRanked.reduce((a, b) => a + b.bpjs, 0)],
+      ];
+      const wsSum = XLSX.utils.aoa_to_sheet(summary);
+      wsSum["!cols"] = [{ wch: 40 }, { wch: 30 }];
+      XLSX.utils.book_append_sheet(wb, wsSum, "Ringkasan");
+
+      // Sheet 2: Konten & Jumlah Leads (ranked)
+      const rankRows = ranked.map((c, i) => ({
+        Rank: i + 1,
+        Kode: c.code,
+        Nama: c.name,
+        Produk: prodById(c.product_id)?.name || "—",
+        "Jumlah Leads": c.hits,
+        "Link Konten": c.content_link || "",
+        Catatan: c.notes || "",
+        Aktif: c.is_active ? "Ya" : "Tidak",
+        "Dibuat": fmtDate(c.created_at),
+      }));
+      const wsRank = XLSX.utils.json_to_sheet(rankRows);
+      wsRank["!cols"] = [{ wch: 6 }, { wch: 14 }, { wch: 40 }, { wch: 24 }, { wch: 14 }, { wch: 50 }, { wch: 40 }, { wch: 8 }, { wch: 22 }];
+      XLSX.utils.book_append_sheet(wb, wsRank, "Konten & Leads");
+
+      // Sheet 3: BPJS Detected per Konten
+      const bpjsRows = bpjsRanked.map((r) => ({
+        Kode: r.code,
+        Nama: r.name,
+        "Total Leads": r.total,
+        "Leads Menyebut BPJS": r.bpjs,
+        "Persentase BPJS (%)": r.pct,
+        "Non-BPJS": r.total - r.bpjs,
+        "Link Konten": r.content_link || "",
+      }));
+      const wsBpjs = XLSX.utils.json_to_sheet(bpjsRows);
+      wsBpjs["!cols"] = [{ wch: 14 }, { wch: 40 }, { wch: 12 }, { wch: 20 }, { wch: 18 }, { wch: 12 }, { wch: 50 }];
+      XLSX.utils.book_append_sheet(wb, wsBpjs, "BPJS Detected");
+
+      // Sheet 4: Distribusi Produk (Ads)
+      const prodRows = productTotals.map((p) => ({ Produk: p.name, "Jumlah Leads Ads": p.value }));
+      const wsProd = XLSX.utils.json_to_sheet(prodRows);
+      wsProd["!cols"] = [{ wch: 32 }, { wch: 18 }];
+      XLSX.utils.book_append_sheet(wb, wsProd, "Distribusi Produk");
+
+      // Sheet 5: Tren Harian
+      const dailyRows = daily.map((d) => ({ Tanggal: d.day, Ads: d.ads, Organik: d.organik, Total: d.total }));
+      const wsDaily = XLSX.utils.json_to_sheet(dailyRows);
+      wsDaily["!cols"] = [{ wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 8 }];
+      XLSX.utils.book_append_sheet(wb, wsDaily, "Tren Harian");
+
+      // Sheet 6: Log Leads Lengkap
+      const logRows = filteredLeads.map((l) => {
+        const c = codeById(l.content_code_id);
+        return {
+          Waktu: fmtDate(l.created_at),
+          Nama: l.full_name || "",
+          "No WhatsApp": l.whatsapp_number,
+          Sumber: l.content_code_id ? "Ads" : (l.source === "organik" ? "Organik" : "—"),
+          "Kode Konten": c?.code || "",
+          "Nama Konten": c?.name || "",
+          "Link Konten": c?.content_link || "",
+          Produk: prodById(l.interested_product_id)?.name || "",
+          "BPJS Terdeteksi": bpjsContactIds.has(l.id) ? "Ya" : "Tidak",
+        };
+      });
+      const wsLog = XLSX.utils.json_to_sheet(logRows);
+      wsLog["!cols"] = [{ wch: 22 }, { wch: 26 }, { wch: 18 }, { wch: 10 }, { wch: 14 }, { wch: 36 }, { wch: 50 }, { wch: 24 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, wsLog, "Log Leads");
+
+      const fname = `ads-content-${from}_to_${to}.xlsx`;
+      XLSX.writeFile(wb, fname);
+      toast.success(`Exported ${fname}`);
+    } catch (e: any) {
+      toast.error("Export gagal: " + (e?.message || String(e)));
+    }
+  }
 
   return (
     <div className="p-3 md:p-6 max-w-7xl mx-auto space-y-4">
