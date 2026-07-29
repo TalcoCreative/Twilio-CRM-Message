@@ -110,6 +110,36 @@ function AdsContentPage() {
       .sort((a, b) => b.hits - a.hits);
   }, [codes, stats]);
 
+  // BPJS detection per content code
+  const bpjsByCode = useMemo(() => {
+    const map: Record<string, { total: number; bpjs: number; bpjsLeads: LeadRow[]; nonBpjsLeads: LeadRow[] }> = {};
+    filteredLeads.forEach((l) => {
+      if (!l.content_code_id) return;
+      const cid = l.content_code_id;
+      if (!map[cid]) map[cid] = { total: 0, bpjs: 0, bpjsLeads: [], nonBpjsLeads: [] };
+      map[cid].total++;
+      if (bpjsContactIds.has(l.id)) {
+        map[cid].bpjs++;
+        map[cid].bpjsLeads.push(l);
+      } else {
+        map[cid].nonBpjsLeads.push(l);
+      }
+    });
+    return map;
+  }, [filteredLeads, bpjsContactIds]);
+
+  const bpjsRanked = useMemo(() => {
+    return codes
+      .map((c) => {
+        const s = bpjsByCode[c.id] || { total: 0, bpjs: 0, bpjsLeads: [], nonBpjsLeads: [] };
+        const pct = s.total > 0 ? Math.round((s.bpjs / s.total) * 100) : 0;
+        return { ...c, ...s, pct };
+      })
+      .filter((r) => r.total > 0)
+      .sort((a, b) => b.pct - a.pct || b.bpjs - a.bpjs);
+  }, [codes, bpjsByCode]);
+
+
   // Daily series
   const daily = useMemo(() => {
     const days: Record<string, { day: string; ads: number; organik: number; total: number }> = {};
