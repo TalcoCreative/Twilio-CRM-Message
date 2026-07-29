@@ -325,7 +325,10 @@ function AdsContentPage() {
             Deteksi konten yang menghasilkan leads paling banyak berdasarkan kode pembuka chat WhatsApp.
           </p>
         </div>
-        <Button onClick={openCreate}><Plus className="size-4 mr-1.5" /> Kode Baru</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={exportXlsx}><Download className="size-4 mr-1.5" /> Export XLSX</Button>
+          <Button onClick={openCreate}><Plus className="size-4 mr-1.5" /> Kode Baru</Button>
+        </div>
       </header>
 
       {/* Date range filter */}
