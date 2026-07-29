@@ -15,7 +15,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-import { Plus, Trash2, Megaphone, Trophy, Copy, ExternalLink, Sparkles, CalendarRange, Eye, Users, X } from "lucide-react";
+import { Plus, Trash2, Megaphone, Trophy, Copy, ExternalLink, Sparkles, CalendarRange, Eye, Users, X, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
