@@ -47,6 +47,7 @@ function AdsContentPage() {
   const [codes, setCodes] = useState<ContentCode[]>([]);
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [bpjsContactIds, setBpjsContactIds] = useState<Set<string>>(new Set());
   const [openNew, setOpenNew] = useState(false);
   const [editing, setEditing] = useState<ContentCode | null>(null);
   const [form, setForm] = useState({ code: "", name: "", content_link: "", notes: "", product_id: "__none__", is_active: true });
@@ -54,22 +55,31 @@ function AdsContentPage() {
   const [from, setFrom] = useState<string>(daysAgo(30));
   const [to, setTo] = useState<string>(toDateStr(new Date()));
   const [previewCodeId, setPreviewCodeId] = useState<string | null>(null);
+  const [bpjsPreviewCodeId, setBpjsPreviewCodeId] = useState<string | null>(null);
 
   async function load() {
-    const [c, l, p] = await Promise.all([
+    const [c, l, p, bpjs] = await Promise.all([
       supabase.from("content_codes").select("*").order("created_at", { ascending: false }),
       supabase.from("contacts").select("id, full_name, whatsapp_number, content_code_id, source, interested_product_id, created_at").order("created_at", { ascending: false }).limit(5000),
       supabase.from("products").select("id, name").eq("is_active", true).order("sort_order"),
+      supabase.from("messages").select("conversations!inner(contact_id)").ilike("content", "%bpjs%").limit(20000),
     ]);
     setCodes((c.data as any) || []);
     setLeads((l.data as any) || []);
     setProducts((p.data as any) || []);
+    const bset = new Set<string>();
+    ((bpjs.data as any[]) || []).forEach((m: any) => {
+      const cid = m?.conversations?.contact_id;
+      if (cid) bset.add(cid);
+    });
+    setBpjsContactIds(bset);
   }
   useEffect(() => {
     load();
     const ch = supabase.channel("ads-content-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "contacts" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "content_codes" }, () => load())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
