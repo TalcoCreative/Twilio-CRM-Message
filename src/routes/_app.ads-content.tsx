@@ -58,32 +58,54 @@ function AdsContentPage() {
   const [previewCodeId, setPreviewCodeId] = useState<string | null>(null);
   const [bpjsPreviewCodeId, setBpjsPreviewCodeId] = useState<string | null>(null);
 
-  async function load() {
-    const [c, l, p, bpjs] = await Promise.all([
+  const [loading, setLoading] = useState(true);
+
+  async function loadBase() {
+    const [c, l, p] = await Promise.all([
       supabase.from("content_codes").select("*").order("created_at", { ascending: false }),
       supabase.from("contacts").select("id, full_name, whatsapp_number, content_code_id, source, interested_product_id, created_at").order("created_at", { ascending: false }).limit(5000),
       supabase.from("products").select("id, name").eq("is_active", true).order("sort_order"),
-      supabase.from("messages").select("conversations!inner(contact_id)").ilike("content", "%bpjs%").limit(20000),
     ]);
     setCodes((c.data as any) || []);
     setLeads((l.data as any) || []);
     setProducts((p.data as any) || []);
+  }
+
+  async function loadBpjs() {
+    const { data } = await supabase
+      .from("messages")
+      .select("conversations!inner(contact_id)")
+      .ilike("content", "%bpjs%")
+      .limit(20000);
     const bset = new Set<string>();
-    ((bpjs.data as any[]) || []).forEach((m: any) => {
+    ((data as any[]) || []).forEach((m: any) => {
       const cid = m?.conversations?.contact_id;
       if (cid) bset.add(cid);
     });
     setBpjsContactIds(bset);
   }
+
   useEffect(() => {
-    load();
+    // Render tabel/kode secepatnya, data BPJS (query berat) menyusul di background
+    loadBase().finally(() => setLoading(false));
+    loadBpjs();
+
+    let baseTimer: any, bpjsTimer: any;
+    const queueBase = () => { clearTimeout(baseTimer); baseTimer = setTimeout(loadBase, 800); };
+    const queueBpjs = () => { clearTimeout(bpjsTimer); bpjsTimer = setTimeout(loadBpjs, 3000); };
+
     const ch = supabase.channel("ads-content-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "contacts" }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "content_codes" }, () => load())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "contacts" }, queueBase)
+      .on("postgres_changes", { event: "*", schema: "public", table: "content_codes" }, queueBase)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload: any) => {
+        // Hanya refresh BPJS kalau pesannya memang menyebut BPJS
+        const content = String(payload?.new?.content || "");
+        if (/bpjs/i.test(content)) queueBpjs();
+      })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => { clearTimeout(baseTimer); clearTimeout(bpjsTimer); supabase.removeChannel(ch); };
   }, []);
+
 
   const filteredLeads = useMemo(() => {
     const fromTs = new Date(from + "T00:00:00").getTime();
