@@ -229,14 +229,14 @@ function AdsContentPage() {
     if (error) return toast.error(error.message);
     toast.success(editing ? "Kode diperbarui" : "Kode ditambahkan");
     setOpenNew(false);
-    load();
+    loadBase();
   }
 
   async function remove(id: string) {
     const { error } = await supabase.from("content_codes").delete().eq("id", id);
     if (error) return toast.error(error.message);
     toast.success("Kode dihapus");
-    load();
+    loadBase();
   }
 
   const COLORS = ["#0ea5e9","#06b6d4","#14b8a6","#10b981","#84cc16","#f59e0b","#f97316","#ef4444","#a855f7","#8b5cf6"];
