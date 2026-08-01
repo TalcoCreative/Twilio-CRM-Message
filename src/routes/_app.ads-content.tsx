@@ -319,6 +319,27 @@ function AdsContentPage() {
       wsBpjs["!cols"] = [{ wch: 14 }, { wch: 40 }, { wch: 12 }, { wch: 20 }, { wch: 18 }, { wch: 12 }, { wch: 50 }];
       XLSX.utils.book_append_sheet(wb, wsBpjs, "BPJS Detected");
 
+      // Sheet 3b: Jumlah BPJS per Tanggal
+      const bpjsDailyRows = [
+        ...bpjsDaily.map((r) => ({
+          Tanggal: r.day,
+          "Total Leads": r.total,
+          BPJS: r.bpjs,
+          "Non-BPJS": r.nonBpjs,
+          "Persentase BPJS (%)": r.pct,
+        })),
+        {
+          Tanggal: "TOTAL",
+          "Total Leads": bpjsDailyTotals.total,
+          BPJS: bpjsDailyTotals.bpjs,
+          "Non-BPJS": bpjsDailyTotals.nonBpjs,
+          "Persentase BPJS (%)": bpjsDailyTotals.pct,
+        },
+      ];
+      const wsBpjsDaily = XLSX.utils.json_to_sheet(bpjsDailyRows);
+      wsBpjsDaily["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }];
+      XLSX.utils.book_append_sheet(wb, wsBpjsDaily, "BPJS Harian");
+
       // Sheet 4: Distribusi Produk (Ads)
       const prodRows = productTotals.map((p) => ({ Produk: p.name, "Jumlah Leads Ads": p.value }));
       const wsProd = XLSX.utils.json_to_sheet(prodRows);
