@@ -162,6 +162,26 @@ function AdsContentPage() {
       .sort((a, b) => b.pct - a.pct || b.bpjs - a.bpjs);
   }, [codes, bpjsByCode]);
 
+  // Jumlah BPJS per tanggal (mengikuti filter tanggal)
+  const bpjsDaily = useMemo(() => {
+    const map: Record<string, { day: string; total: number; bpjs: number }> = {};
+    filteredLeads.forEach((l) => {
+      const k = l.created_at.slice(0, 10);
+      if (!map[k]) map[k] = { day: k, total: 0, bpjs: 0 };
+      map[k].total++;
+      if (bpjsContactIds.has(l.id)) map[k].bpjs++;
+    });
+    return Object.values(map)
+      .map((r) => ({ ...r, nonBpjs: r.total - r.bpjs, pct: r.total ? Math.round((r.bpjs / r.total) * 100) : 0 }))
+      .sort((a, b) => (a.day < b.day ? 1 : -1));
+  }, [filteredLeads, bpjsContactIds]);
+
+  const bpjsDailyTotals = useMemo(() => {
+    const total = bpjsDaily.reduce((a, b) => a + b.total, 0);
+    const bpjs = bpjsDaily.reduce((a, b) => a + b.bpjs, 0);
+    return { total, bpjs, nonBpjs: total - bpjs, pct: total ? Math.round((bpjs / total) * 100) : 0 };
+  }, [bpjsDaily]);
+
 
   // Daily series
   const daily = useMemo(() => {
