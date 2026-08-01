@@ -58,32 +58,54 @@ function AdsContentPage() {
   const [previewCodeId, setPreviewCodeId] = useState<string | null>(null);
   const [bpjsPreviewCodeId, setBpjsPreviewCodeId] = useState<string | null>(null);
 
-  async function load() {
-    const [c, l, p, bpjs] = await Promise.all([
+  const [loading, setLoading] = useState(true);
+
+  async function loadBase() {
+    const [c, l, p] = await Promise.all([
       supabase.from("content_codes").select("*").order("created_at", { ascending: false }),
       supabase.from("contacts").select("id, full_name, whatsapp_number, content_code_id, source, interested_product_id, created_at").order("created_at", { ascending: false }).limit(5000),
       supabase.from("products").select("id, name").eq("is_active", true).order("sort_order"),
-      supabase.from("messages").select("conversations!inner(contact_id)").ilike("content", "%bpjs%").limit(20000),
     ]);
     setCodes((c.data as any) || []);
     setLeads((l.data as any) || []);
     setProducts((p.data as any) || []);
+  }
+
+  async function loadBpjs() {
+    const { data } = await supabase
+      .from("messages")
+      .select("conversations!inner(contact_id)")
+      .ilike("content", "%bpjs%")
+      .limit(20000);
     const bset = new Set<string>();
-    ((bpjs.data as any[]) || []).forEach((m: any) => {
+    ((data as any[]) || []).forEach((m: any) => {
       const cid = m?.conversations?.contact_id;
       if (cid) bset.add(cid);
     });
     setBpjsContactIds(bset);
   }
+
   useEffect(() => {
-    load();
+    // Render tabel/kode secepatnya, data BPJS (query berat) menyusul di background
+    loadBase().finally(() => setLoading(false));
+    loadBpjs();
+
+    let baseTimer: any, bpjsTimer: any;
+    const queueBase = () => { clearTimeout(baseTimer); baseTimer = setTimeout(loadBase, 800); };
+    const queueBpjs = () => { clearTimeout(bpjsTimer); bpjsTimer = setTimeout(loadBpjs, 3000); };
+
     const ch = supabase.channel("ads-content-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "contacts" }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "content_codes" }, () => load())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "contacts" }, queueBase)
+      .on("postgres_changes", { event: "*", schema: "public", table: "content_codes" }, queueBase)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload: any) => {
+        // Hanya refresh BPJS kalau pesannya memang menyebut BPJS
+        const content = String(payload?.new?.content || "");
+        if (/bpjs/i.test(content)) queueBpjs();
+      })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => { clearTimeout(baseTimer); clearTimeout(bpjsTimer); supabase.removeChannel(ch); };
   }, []);
+
 
   const filteredLeads = useMemo(() => {
     const fromTs = new Date(from + "T00:00:00").getTime();
@@ -139,6 +161,26 @@ function AdsContentPage() {
       .filter((r) => r.total > 0)
       .sort((a, b) => b.pct - a.pct || b.bpjs - a.bpjs);
   }, [codes, bpjsByCode]);
+
+  // Jumlah BPJS per tanggal (mengikuti filter tanggal)
+  const bpjsDaily = useMemo(() => {
+    const map: Record<string, { day: string; total: number; bpjs: number }> = {};
+    filteredLeads.forEach((l) => {
+      const k = l.created_at.slice(0, 10);
+      if (!map[k]) map[k] = { day: k, total: 0, bpjs: 0 };
+      map[k].total++;
+      if (bpjsContactIds.has(l.id)) map[k].bpjs++;
+    });
+    return Object.values(map)
+      .map((r) => ({ ...r, nonBpjs: r.total - r.bpjs, pct: r.total ? Math.round((r.bpjs / r.total) * 100) : 0 }))
+      .sort((a, b) => (a.day < b.day ? 1 : -1));
+  }, [filteredLeads, bpjsContactIds]);
+
+  const bpjsDailyTotals = useMemo(() => {
+    const total = bpjsDaily.reduce((a, b) => a + b.total, 0);
+    const bpjs = bpjsDaily.reduce((a, b) => a + b.bpjs, 0);
+    return { total, bpjs, nonBpjs: total - bpjs, pct: total ? Math.round((bpjs / total) * 100) : 0 };
+  }, [bpjsDaily]);
 
 
   // Daily series
@@ -207,14 +249,14 @@ function AdsContentPage() {
     if (error) return toast.error(error.message);
     toast.success(editing ? "Kode diperbarui" : "Kode ditambahkan");
     setOpenNew(false);
-    load();
+    loadBase();
   }
 
   async function remove(id: string) {
     const { error } = await supabase.from("content_codes").delete().eq("id", id);
     if (error) return toast.error(error.message);
     toast.success("Kode dihapus");
-    load();
+    loadBase();
   }
 
   const COLORS = ["#0ea5e9","#06b6d4","#14b8a6","#10b981","#84cc16","#f59e0b","#f97316","#ef4444","#a855f7","#8b5cf6"];
@@ -276,6 +318,27 @@ function AdsContentPage() {
       const wsBpjs = XLSX.utils.json_to_sheet(bpjsRows);
       wsBpjs["!cols"] = [{ wch: 14 }, { wch: 40 }, { wch: 12 }, { wch: 20 }, { wch: 18 }, { wch: 12 }, { wch: 50 }];
       XLSX.utils.book_append_sheet(wb, wsBpjs, "BPJS Detected");
+
+      // Sheet 3b: Jumlah BPJS per Tanggal
+      const bpjsDailyRows = [
+        ...bpjsDaily.map((r) => ({
+          Tanggal: r.day,
+          "Total Leads": r.total,
+          BPJS: r.bpjs,
+          "Non-BPJS": r.nonBpjs,
+          "Persentase BPJS (%)": r.pct,
+        })),
+        {
+          Tanggal: "TOTAL",
+          "Total Leads": bpjsDailyTotals.total,
+          BPJS: bpjsDailyTotals.bpjs,
+          "Non-BPJS": bpjsDailyTotals.nonBpjs,
+          "Persentase BPJS (%)": bpjsDailyTotals.pct,
+        },
+      ];
+      const wsBpjsDaily = XLSX.utils.json_to_sheet(bpjsDailyRows);
+      wsBpjsDaily["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }];
+      XLSX.utils.book_append_sheet(wb, wsBpjsDaily, "BPJS Harian");
 
       // Sheet 4: Distribusi Produk (Ads)
       const prodRows = productTotals.map((p) => ({ Produk: p.name, "Jumlah Leads Ads": p.value }));
@@ -489,6 +552,77 @@ function AdsContentPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Jumlah BPJS per Tanggal */}
+      <Card className="glow-soft">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="size-4 text-emerald-500" /> Jumlah BPJS per Tanggal
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Total leads yang menyebut "BPJS" per tanggal (seluruh leads, bukan per konten) sesuai filter tanggal aktif.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="p-3 rounded-lg bg-accent/40 border border-border/50">
+              <div className="text-xs text-muted-foreground">Total Leads</div>
+              <div className="text-2xl font-bold">{bpjsDailyTotals.total}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-accent/40 border border-border/50">
+              <div className="text-xs text-muted-foreground">BPJS</div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{bpjsDailyTotals.bpjs}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-accent/40 border border-border/50">
+              <div className="text-xs text-muted-foreground">Non-BPJS</div>
+              <div className="text-2xl font-bold">{bpjsDailyTotals.nonBpjs}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-accent/40 border border-border/50">
+              <div className="text-xs text-muted-foreground">Persentase BPJS</div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{bpjsDailyTotals.pct}%</div>
+            </div>
+          </div>
+          {bpjsDaily.length === 0 ? (
+            <div className="text-center text-sm text-muted-foreground py-8">Belum ada leads pada rentang ini.</div>
+          ) : (
+            <div className="max-h-[420px] overflow-auto rounded-lg border border-border/50">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-card">
+                  <tr className="border-b border-border/50 text-xs text-muted-foreground">
+                    <th className="text-left p-2 font-medium">Tanggal</th>
+                    <th className="text-right p-2 font-medium">Total Leads</th>
+                    <th className="text-right p-2 font-medium">BPJS</th>
+                    <th className="text-right p-2 font-medium">Non-BPJS</th>
+                    <th className="text-right p-2 font-medium">% BPJS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bpjsDaily.map((r) => (
+                    <tr key={r.day} className="border-b border-border/30 last:border-0">
+                      <td className="p-2 font-mono text-xs">{r.day}</td>
+                      <td className="p-2 text-right">{r.total}</td>
+                      <td className="p-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">{r.bpjs}</td>
+                      <td className="p-2 text-right">{r.nonBpjs}</td>
+                      <td className="p-2 text-right">{r.pct}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-accent/40 font-semibold">
+                    <td className="p-2">Total</td>
+                    <td className="p-2 text-right">{bpjsDailyTotals.total}</td>
+                    <td className="p-2 text-right text-emerald-600 dark:text-emerald-400">{bpjsDailyTotals.bpjs}</td>
+                    <td className="p-2 text-right">{bpjsDailyTotals.nonBpjs}</td>
+                    <td className="p-2 text-right">{bpjsDailyTotals.pct}%</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+
 
       {/* BPJS Preview Dialog — hanya menampilkan leads yang menyebut BPJS */}
       <Dialog open={!!bpjsPreviewCodeId} onOpenChange={(v) => !v && setBpjsPreviewCodeId(null)}>
