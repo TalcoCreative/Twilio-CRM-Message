@@ -532,6 +532,77 @@ function AdsContentPage() {
         </CardContent>
       </Card>
 
+      {/* Jumlah BPJS per Tanggal */}
+      <Card className="glow-soft">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="size-4 text-emerald-500" /> Jumlah BPJS per Tanggal
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Total leads yang menyebut "BPJS" per tanggal (seluruh leads, bukan per konten) sesuai filter tanggal aktif.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="p-3 rounded-lg bg-accent/40 border border-border/50">
+              <div className="text-xs text-muted-foreground">Total Leads</div>
+              <div className="text-2xl font-bold">{bpjsDailyTotals.total}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-accent/40 border border-border/50">
+              <div className="text-xs text-muted-foreground">BPJS</div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{bpjsDailyTotals.bpjs}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-accent/40 border border-border/50">
+              <div className="text-xs text-muted-foreground">Non-BPJS</div>
+              <div className="text-2xl font-bold">{bpjsDailyTotals.nonBpjs}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-accent/40 border border-border/50">
+              <div className="text-xs text-muted-foreground">Persentase BPJS</div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{bpjsDailyTotals.pct}%</div>
+            </div>
+          </div>
+          {bpjsDaily.length === 0 ? (
+            <div className="text-center text-sm text-muted-foreground py-8">Belum ada leads pada rentang ini.</div>
+          ) : (
+            <div className="max-h-[420px] overflow-auto rounded-lg border border-border/50">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-card">
+                  <tr className="border-b border-border/50 text-xs text-muted-foreground">
+                    <th className="text-left p-2 font-medium">Tanggal</th>
+                    <th className="text-right p-2 font-medium">Total Leads</th>
+                    <th className="text-right p-2 font-medium">BPJS</th>
+                    <th className="text-right p-2 font-medium">Non-BPJS</th>
+                    <th className="text-right p-2 font-medium">% BPJS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bpjsDaily.map((r) => (
+                    <tr key={r.day} className="border-b border-border/30 last:border-0">
+                      <td className="p-2 font-mono text-xs">{r.day}</td>
+                      <td className="p-2 text-right">{r.total}</td>
+                      <td className="p-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">{r.bpjs}</td>
+                      <td className="p-2 text-right">{r.nonBpjs}</td>
+                      <td className="p-2 text-right">{r.pct}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-accent/40 font-semibold">
+                    <td className="p-2">Total</td>
+                    <td className="p-2 text-right">{bpjsDailyTotals.total}</td>
+                    <td className="p-2 text-right text-emerald-600 dark:text-emerald-400">{bpjsDailyTotals.bpjs}</td>
+                    <td className="p-2 text-right">{bpjsDailyTotals.nonBpjs}</td>
+                    <td className="p-2 text-right">{bpjsDailyTotals.pct}%</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+
+
       {/* BPJS Preview Dialog — hanya menampilkan leads yang menyebut BPJS */}
       <Dialog open={!!bpjsPreviewCodeId} onOpenChange={(v) => !v && setBpjsPreviewCodeId(null)}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
