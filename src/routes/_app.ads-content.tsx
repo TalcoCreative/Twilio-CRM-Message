@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
-  AreaChart, Area, PieChart, Pie, Legend,
+  AreaChart, Area, PieChart, Pie, Legend, ComposedChart, Line,
 } from "recharts";
 
 export const Route = createFileRoute("/_app/ads-content")({
@@ -182,6 +182,30 @@ function AdsContentPage() {
     return { total, bpjs, nonBpjs: total - bpjs, pct: total ? Math.round((bpjs / total) * 100) : 0 };
   }, [bpjsDaily]);
 
+  // Ascending (kronologis) + kumulatif & moving average 7 hari untuk grafik tren
+  const bpjsDailyAsc = useMemo(() => {
+    const asc = [...bpjsDaily].sort((a, b) => (a.day < b.day ? -1 : 1));
+    let cumTotal = 0;
+    let cumBpjs = 0;
+    return asc.map((r, i) => {
+      cumTotal += r.total;
+      cumBpjs += r.bpjs;
+      const win = asc.slice(Math.max(0, i - 6), i + 1);
+      const wt = win.reduce((a, b) => a + b.total, 0);
+      const wb = win.reduce((a, b) => a + b.bpjs, 0);
+      return {
+        ...r,
+        label: r.day.slice(5),
+        cumTotal,
+        cumBpjs,
+        cumPct: cumTotal ? Math.round((cumBpjs / cumTotal) * 100) : 0,
+        ma7: wt ? Math.round((wb / wt) * 100) : 0,
+      };
+    });
+  }, [bpjsDaily]);
+
+
+
 
   // Daily series
   const daily = useMemo(() => {
@@ -284,6 +308,14 @@ function AdsContentPage() {
         ["Total Kode Konten Aktif", codes.filter((c) => c.is_active).length],
         ["Total Kode Konten", codes.length],
         ["Total Leads Menyebut BPJS (Ads)", bpjsRanked.reduce((a, b) => a + b.bpjs, 0)],
+        [],
+        ["BPJS — Seluruh Leads (rentang aktif)"],
+        ["Total Leads", bpjsDailyTotals.total],
+        ["Leads BPJS", bpjsDailyTotals.bpjs],
+        ["Leads Non-BPJS", bpjsDailyTotals.nonBpjs],
+        ["Persentase BPJS (%)", bpjsDailyTotals.pct],
+        ["Hari Tertinggi BPJS", (() => { const m = [...bpjsDaily].sort((a, b) => b.bpjs - a.bpjs)[0]; return m ? `${m.day} (${m.bpjs} leads, ${m.pct}%)` : "—"; })()],
+        ["Rata-rata BPJS / Hari", bpjsDaily.length ? Math.round((bpjsDailyTotals.bpjs / bpjsDaily.length) * 10) / 10 : 0],
       ];
       const wsSum = XLSX.utils.aoa_to_sheet(summary);
       wsSum["!cols"] = [{ wch: 40 }, { wch: 30 }];
@@ -319,26 +351,63 @@ function AdsContentPage() {
       wsBpjs["!cols"] = [{ wch: 14 }, { wch: 40 }, { wch: 12 }, { wch: 20 }, { wch: 18 }, { wch: 12 }, { wch: 50 }];
       XLSX.utils.book_append_sheet(wb, wsBpjs, "BPJS Detected");
 
-      // Sheet 3b: Jumlah BPJS per Tanggal
+      // Sheet 3b: Jumlah BPJS per Tanggal (kronologis + kumulatif + MA7)
+      const dayName = (d: string) =>
+        new Date(d + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", timeZone: "Asia/Jakarta" });
       const bpjsDailyRows = [
-        ...bpjsDaily.map((r) => ({
+        ...bpjsDailyAsc.map((r) => ({
           Tanggal: r.day,
+          Hari: dayName(r.day),
           "Total Leads": r.total,
           BPJS: r.bpjs,
           "Non-BPJS": r.nonBpjs,
           "Persentase BPJS (%)": r.pct,
+          "MA 7 Hari (%)": r.ma7,
+          "Kumulatif Leads": r.cumTotal,
+          "Kumulatif BPJS": r.cumBpjs,
+          "Kumulatif % BPJS": r.cumPct,
         })),
         {
           Tanggal: "TOTAL",
+          Hari: "",
           "Total Leads": bpjsDailyTotals.total,
           BPJS: bpjsDailyTotals.bpjs,
           "Non-BPJS": bpjsDailyTotals.nonBpjs,
           "Persentase BPJS (%)": bpjsDailyTotals.pct,
+          "MA 7 Hari (%)": "",
+          "Kumulatif Leads": bpjsDailyTotals.total,
+          "Kumulatif BPJS": bpjsDailyTotals.bpjs,
+          "Kumulatif % BPJS": bpjsDailyTotals.pct,
         },
       ];
       const wsBpjsDaily = XLSX.utils.json_to_sheet(bpjsDailyRows);
-      wsBpjsDaily["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }];
+      wsBpjsDaily["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, wsBpjsDaily, "BPJS Harian");
+
+      // Sheet 3c: Detail leads BPJS per tanggal
+      const bpjsDetailRows = filteredLeads
+        .filter((l) => bpjsContactIds.has(l.id))
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+        .map((l) => {
+          const c = codeById(l.content_code_id);
+          return {
+            Tanggal: l.created_at.slice(0, 10),
+            Waktu: fmtDate(l.created_at),
+            Nama: l.full_name || "",
+            "No WhatsApp": l.whatsapp_number,
+            Sumber: l.content_code_id ? "Ads" : (l.source === "organik" ? "Organik" : "—"),
+            "Kode Konten": c?.code || "",
+            "Nama Konten": c?.name || "",
+            "Link Konten": c?.content_link || "",
+            Produk: prodById(l.interested_product_id)?.name || "",
+          };
+        });
+      const wsBpjsDetail = XLSX.utils.json_to_sheet(
+        bpjsDetailRows.length ? bpjsDetailRows : [{ Tanggal: "", Waktu: "", Nama: "Tidak ada leads BPJS pada rentang ini" }]
+      );
+      wsBpjsDetail["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 26 }, { wch: 18 }, { wch: 10 }, { wch: 14 }, { wch: 36 }, { wch: 50 }, { wch: 24 }];
+      XLSX.utils.book_append_sheet(wb, wsBpjsDetail, "BPJS Detail Leads");
+
 
       // Sheet 4: Distribusi Produk (Ads)
       const prodRows = productTotals.map((p) => ({ Produk: p.name, "Jumlah Leads Ads": p.value }));
@@ -582,6 +651,30 @@ function AdsContentPage() {
               <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{bpjsDailyTotals.pct}%</div>
             </div>
           </div>
+          {bpjsDailyAsc.length > 0 && (
+            <div className="mb-4 rounded-lg border border-border/50 p-3">
+              <div className="text-xs text-muted-foreground mb-2">
+                Tren harian: batang = jumlah leads (BPJS vs Non-BPJS), garis = % BPJS harian dan rata-rata bergerak 7 hari.
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <ComposedChart data={bpjsDailyAsc}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                  <XAxis dataKey="label" fontSize={11} />
+                  <YAxis yAxisId="left" fontSize={11} allowDecimals={false} />
+                  <YAxis yAxisId="right" orientation="right" fontSize={11} domain={[0, 100]} unit="%" />
+                  <Tooltip
+                    contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                    formatter={(v: any, n: any) => [String(v) + (String(n).includes("%") ? "%" : ""), n]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="left" dataKey="bpjs" name="BPJS" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
+                  <Bar yAxisId="left" dataKey="nonBpjs" name="Non-BPJS" stackId="a" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="pct" name="% BPJS" stroke="#0ea5e9" strokeWidth={2} dot={false} />
+                  <Line yAxisId="right" type="monotone" dataKey="ma7" name="% BPJS (MA 7 hari)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 3" dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
           {bpjsDaily.length === 0 ? (
             <div className="text-center text-sm text-muted-foreground py-8">Belum ada leads pada rentang ini.</div>
           ) : (
