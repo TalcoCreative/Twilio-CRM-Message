@@ -198,10 +198,9 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
     const rows = lines.slice(1).map(parseCsvLine);
     let success = 0, failed = 0;
     for (const row of rows) {
-      let phone = (row[idx("whatsapp_number")] || "").replace(/\D/g, "");
+      const phone = normalizeWa(row[idx("whatsapp_number")] || "");
       if (!phone) { failed++; continue; }
-      if (phone.startsWith("0")) phone = "62" + phone.slice(1);
-      if (!phone.startsWith("62")) phone = "62" + phone;
+
       const stageName = row[idx("stage")] || "Lead Masuk";
       const stageId = stages.find((s) => s.name === stageName)?.id || stages.find((s) => s.is_default)?.id;
       const productName = row[idx("product")] || "";
