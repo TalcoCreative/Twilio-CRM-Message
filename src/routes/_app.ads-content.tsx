@@ -308,6 +308,14 @@ function AdsContentPage() {
         ["Total Kode Konten Aktif", codes.filter((c) => c.is_active).length],
         ["Total Kode Konten", codes.length],
         ["Total Leads Menyebut BPJS (Ads)", bpjsRanked.reduce((a, b) => a + b.bpjs, 0)],
+        [],
+        ["BPJS — Seluruh Leads (rentang aktif)"],
+        ["Total Leads", bpjsDailyTotals.total],
+        ["Leads BPJS", bpjsDailyTotals.bpjs],
+        ["Leads Non-BPJS", bpjsDailyTotals.nonBpjs],
+        ["Persentase BPJS (%)", bpjsDailyTotals.pct],
+        ["Hari Tertinggi BPJS", (() => { const m = [...bpjsDaily].sort((a, b) => b.bpjs - a.bpjs)[0]; return m ? `${m.day} (${m.bpjs} leads, ${m.pct}%)` : "—"; })()],
+        ["Rata-rata BPJS / Hari", bpjsDaily.length ? Math.round((bpjsDailyTotals.bpjs / bpjsDaily.length) * 10) / 10 : 0],
       ];
       const wsSum = XLSX.utils.aoa_to_sheet(summary);
       wsSum["!cols"] = [{ wch: 40 }, { wch: 30 }];
