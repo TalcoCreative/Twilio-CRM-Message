@@ -69,28 +69,37 @@ export function basicAuthHeader(cfg: TwilioConfig): string {
   return "Basic " + btoa(`${cfg.accountSid}:${cfg.authToken}`);
 }
 
+// Only Indonesian LOCAL formats get the 62 prefix (leading 0, or bare 8xxxxxxxx).
+// Any other number already carries its own country code and must be left intact.
+function applyIdPrefix(digits: string): string {
+  let n = digits;
+  if (n.startsWith("0")) return "62" + n.slice(1);
+  if (n.startsWith("62")) return n;
+  if (n.startsWith("8")) return "62" + n; // local Indonesian mobile without leading 0
+  return n; // international number (e.g. 971..., 65..., 1...) — keep as-is
+}
+
 export function toWhatsapp(n: string): string {
   const raw = String(n || "").trim();
   if (!raw) return "";
   if (raw.startsWith("whatsapp:")) return raw;
   let x = raw.replace(/[^\d+]/g, "");
   if (!x.startsWith("+")) {
-    // Assume Indonesian default when local
-    if (x.startsWith("0")) x = "62" + x.slice(1);
-    if (!x.startsWith("62") && x.length <= 12) x = "62" + x;
-    x = "+" + x;
+    x = "+" + applyIdPrefix(x.replace(/\D/g, ""));
   }
   return `whatsapp:${x}`;
 }
 
 export function normalizePhone(p: string): string {
-  let n = String(p || "").replace(/^whatsapp:/i, "").replace(/[^\d]/g, "");
+  const hadPlus = /^\s*(whatsapp:)?\+/i.test(String(p || ""));
+  const n = String(p || "").replace(/^whatsapp:/i, "").replace(/[^\d]/g, "");
   if (!n) return "";
-  if (n.startsWith("0")) n = "62" + n.slice(1);
-  if (!/^\d{7,}$/.test(n)) return "";
-  if (!n.startsWith("62") && n.length <= 12) n = "62" + n;
-  return n;
+  if (!/^\d{7,15}$/.test(n)) return "";
+  // A number that arrived in E.164 (with +) is already complete — never rewrite it.
+  if (hadPlus) return n;
+  return applyIdPrefix(n);
 }
+
 
 // Twilio request signature validation
 // https://www.twilio.com/docs/usage/webhooks/webhooks-security
