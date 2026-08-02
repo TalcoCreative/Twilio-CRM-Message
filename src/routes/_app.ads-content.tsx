@@ -606,6 +606,30 @@ function AdsContentPage() {
               <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{bpjsDailyTotals.pct}%</div>
             </div>
           </div>
+          {bpjsDailyAsc.length > 0 && (
+            <div className="mb-4 rounded-lg border border-border/50 p-3">
+              <div className="text-xs text-muted-foreground mb-2">
+                Tren harian: batang = jumlah leads (BPJS vs Non-BPJS), garis = % BPJS harian dan rata-rata bergerak 7 hari.
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <ComposedChart data={bpjsDailyAsc}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                  <XAxis dataKey="label" fontSize={11} />
+                  <YAxis yAxisId="left" fontSize={11} allowDecimals={false} />
+                  <YAxis yAxisId="right" orientation="right" fontSize={11} domain={[0, 100]} unit="%" />
+                  <Tooltip
+                    contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                    formatter={(v: any, n: any) => [String(v) + (String(n).includes("%") ? "%" : ""), n]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="left" dataKey="bpjs" name="BPJS" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
+                  <Bar yAxisId="left" dataKey="nonBpjs" name="Non-BPJS" stackId="a" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="pct" name="% BPJS" stroke="#0ea5e9" strokeWidth={2} dot={false} />
+                  <Line yAxisId="right" type="monotone" dataKey="ma7" name="% BPJS (MA 7 hari)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 3" dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
           {bpjsDaily.length === 0 ? (
             <div className="text-center text-sm text-muted-foreground py-8">Belum ada leads pada rentang ini.</div>
           ) : (
