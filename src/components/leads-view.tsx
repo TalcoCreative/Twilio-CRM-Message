@@ -149,9 +149,8 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
 
   async function createLead(e: React.FormEvent) {
     e.preventDefault();
-    let phone = form.whatsapp_number.replace(/\D/g, "");
-    if (phone.startsWith("0")) phone = "62" + phone.slice(1);
-    if (!phone.startsWith("62")) phone = "62" + phone;
+    const phone = normalizeWa(form.whatsapp_number);
+
     const defaultStage = stages.find((s) => s.is_default || s.name === "Lead Masuk")?.id;
     const { error } = await supabase.from("contacts").insert({
       whatsapp_number: phone, full_name: form.full_name || null,
