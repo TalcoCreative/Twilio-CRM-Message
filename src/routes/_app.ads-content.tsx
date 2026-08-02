@@ -343,26 +343,63 @@ function AdsContentPage() {
       wsBpjs["!cols"] = [{ wch: 14 }, { wch: 40 }, { wch: 12 }, { wch: 20 }, { wch: 18 }, { wch: 12 }, { wch: 50 }];
       XLSX.utils.book_append_sheet(wb, wsBpjs, "BPJS Detected");
 
-      // Sheet 3b: Jumlah BPJS per Tanggal
+      // Sheet 3b: Jumlah BPJS per Tanggal (kronologis + kumulatif + MA7)
+      const dayName = (d: string) =>
+        new Date(d + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", timeZone: "Asia/Jakarta" });
       const bpjsDailyRows = [
-        ...bpjsDaily.map((r) => ({
+        ...bpjsDailyAsc.map((r) => ({
           Tanggal: r.day,
+          Hari: dayName(r.day),
           "Total Leads": r.total,
           BPJS: r.bpjs,
           "Non-BPJS": r.nonBpjs,
           "Persentase BPJS (%)": r.pct,
+          "MA 7 Hari (%)": r.ma7,
+          "Kumulatif Leads": r.cumTotal,
+          "Kumulatif BPJS": r.cumBpjs,
+          "Kumulatif % BPJS": r.cumPct,
         })),
         {
           Tanggal: "TOTAL",
+          Hari: "",
           "Total Leads": bpjsDailyTotals.total,
           BPJS: bpjsDailyTotals.bpjs,
           "Non-BPJS": bpjsDailyTotals.nonBpjs,
           "Persentase BPJS (%)": bpjsDailyTotals.pct,
+          "MA 7 Hari (%)": "",
+          "Kumulatif Leads": bpjsDailyTotals.total,
+          "Kumulatif BPJS": bpjsDailyTotals.bpjs,
+          "Kumulatif % BPJS": bpjsDailyTotals.pct,
         },
       ];
       const wsBpjsDaily = XLSX.utils.json_to_sheet(bpjsDailyRows);
-      wsBpjsDaily["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }];
+      wsBpjsDaily["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, wsBpjsDaily, "BPJS Harian");
+
+      // Sheet 3c: Detail leads BPJS per tanggal
+      const bpjsDetailRows = filteredLeads
+        .filter((l) => bpjsContactIds.has(l.id))
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+        .map((l) => {
+          const c = codeById(l.content_code_id);
+          return {
+            Tanggal: l.created_at.slice(0, 10),
+            Waktu: fmtDate(l.created_at),
+            Nama: l.full_name || "",
+            "No WhatsApp": l.whatsapp_number,
+            Sumber: l.content_code_id ? "Ads" : (l.source === "organik" ? "Organik" : "—"),
+            "Kode Konten": c?.code || "",
+            "Nama Konten": c?.name || "",
+            "Link Konten": c?.content_link || "",
+            Produk: prodById(l.interested_product_id)?.name || "",
+          };
+        });
+      const wsBpjsDetail = XLSX.utils.json_to_sheet(
+        bpjsDetailRows.length ? bpjsDetailRows : [{ Tanggal: "", Waktu: "", Nama: "Tidak ada leads BPJS pada rentang ini" }]
+      );
+      wsBpjsDetail["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 26 }, { wch: 18 }, { wch: 10 }, { wch: 14 }, { wch: 36 }, { wch: 50 }, { wch: 24 }];
+      XLSX.utils.book_append_sheet(wb, wsBpjsDetail, "BPJS Detail Leads");
+
 
       // Sheet 4: Distribusi Produk (Ads)
       const prodRows = productTotals.map((p) => ({ Produk: p.name, "Jumlah Leads Ads": p.value }));
