@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeWa } from "@/lib/phone";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -750,12 +752,9 @@ function TeamTab() {
   }
 
   function normPhone(v: string): string {
-    const d = v.replace(/\D/g, "");
-    if (!d) return "";
-    if (d.startsWith("0")) return "62" + d.slice(1);
-    if (d.startsWith("62")) return d;
-    return "62" + d;
+    return normalizeWa(v);
   }
+
 
   async function addAgent(e: React.FormEvent) {
     e.preventDefault();

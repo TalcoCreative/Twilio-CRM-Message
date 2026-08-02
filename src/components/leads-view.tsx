@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeWa } from "@/lib/phone";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -149,9 +151,8 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
 
   async function createLead(e: React.FormEvent) {
     e.preventDefault();
-    let phone = form.whatsapp_number.replace(/\D/g, "");
-    if (phone.startsWith("0")) phone = "62" + phone.slice(1);
-    if (!phone.startsWith("62")) phone = "62" + phone;
+    const phone = normalizeWa(form.whatsapp_number);
+
     const defaultStage = stages.find((s) => s.is_default || s.name === "Lead Masuk")?.id;
     const { error } = await supabase.from("contacts").insert({
       whatsapp_number: phone, full_name: form.full_name || null,
@@ -199,10 +200,9 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
     const rows = lines.slice(1).map(parseCsvLine);
     let success = 0, failed = 0;
     for (const row of rows) {
-      let phone = (row[idx("whatsapp_number")] || "").replace(/\D/g, "");
+      const phone = normalizeWa(row[idx("whatsapp_number")] || "");
       if (!phone) { failed++; continue; }
-      if (phone.startsWith("0")) phone = "62" + phone.slice(1);
-      if (!phone.startsWith("62")) phone = "62" + phone;
+
       const stageName = row[idx("stage")] || "Lead Masuk";
       const stageId = stages.find((s) => s.name === stageName)?.id || stages.find((s) => s.is_default)?.id;
       const productName = row[idx("product")] || "";

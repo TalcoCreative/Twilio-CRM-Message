@@ -1,0 +1,1 @@
+UPDATE public.contacts SET whatsapp_number = '971545618783' WHERE id = 'de0ee598-a3a6-48d0-8804-b25da3b8940c' AND whatsapp_number = '62971545618783';
