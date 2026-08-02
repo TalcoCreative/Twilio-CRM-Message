@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
-  AreaChart, Area, PieChart, Pie, Legend,
+  AreaChart, Area, PieChart, Pie, Legend, ComposedChart, Line,
 } from "recharts";
 
 export const Route = createFileRoute("/_app/ads-content")({
