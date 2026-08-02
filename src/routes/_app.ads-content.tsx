@@ -182,6 +182,30 @@ function AdsContentPage() {
     return { total, bpjs, nonBpjs: total - bpjs, pct: total ? Math.round((bpjs / total) * 100) : 0 };
   }, [bpjsDaily]);
 
+  // Ascending (kronologis) + kumulatif & moving average 7 hari untuk grafik tren
+  const bpjsDailyAsc = useMemo(() => {
+    const asc = [...bpjsDaily].sort((a, b) => (a.day < b.day ? -1 : 1));
+    let cumTotal = 0;
+    let cumBpjs = 0;
+    return asc.map((r, i) => {
+      cumTotal += r.total;
+      cumBpjs += r.bpjs;
+      const win = asc.slice(Math.max(0, i - 6), i + 1);
+      const wt = win.reduce((a, b) => a + b.total, 0);
+      const wb = win.reduce((a, b) => a + b.bpjs, 0);
+      return {
+        ...r,
+        label: r.day.slice(5),
+        cumTotal,
+        cumBpjs,
+        cumPct: cumTotal ? Math.round((cumBpjs / cumTotal) * 100) : 0,
+        ma7: wt ? Math.round((wb / wt) * 100) : 0,
+      };
+    });
+  }, [bpjsDaily]);
+
+
+
 
   // Daily series
   const daily = useMemo(() => {
