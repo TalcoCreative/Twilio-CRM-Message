@@ -41,6 +41,9 @@ type LeadRow = {
 };
 type Product = { id: string; name: string };
 
+/** Kategori BPJS mencakup penyebutan BPJS, KIS, atau ASKES pada chat. */
+const BPJS_KEYWORD_RE = /\b(bpjs|kis|askes)\b/i;
+
 function toDateStr(d: Date) { return d.toISOString().slice(0, 10); }
 function daysAgo(n: number) { const d = new Date(); d.setDate(d.getDate() - n); return toDateStr(d); }
 
@@ -74,13 +77,13 @@ function AdsContentPage() {
   async function loadBpjs() {
     const { data } = await supabase
       .from("messages")
-      .select("conversations!inner(contact_id)")
-      .ilike("content", "%bpjs%")
+      .select("content, conversations!inner(contact_id)")
+      .or("content.ilike.%bpjs%,content.ilike.%kis%,content.ilike.%askes%")
       .limit(20000);
     const bset = new Set<string>();
     ((data as any[]) || []).forEach((m: any) => {
       const cid = m?.conversations?.contact_id;
-      if (cid) bset.add(cid);
+      if (cid && BPJS_KEYWORD_RE.test(String(m?.content || ""))) bset.add(cid);
     });
     setBpjsContactIds(bset);
   }
@@ -98,10 +101,11 @@ function AdsContentPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "contacts" }, queueBase)
       .on("postgres_changes", { event: "*", schema: "public", table: "content_codes" }, queueBase)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload: any) => {
-        // Hanya refresh BPJS kalau pesannya memang menyebut BPJS
+        // Hanya refresh kalau pesannya menyebut BPJS / KIS / ASKES
         const content = String(payload?.new?.content || "");
-        if (/bpjs/i.test(content)) queueBpjs();
+        if (BPJS_KEYWORD_RE.test(content)) queueBpjs();
       })
+
       .subscribe();
     return () => { clearTimeout(baseTimer); clearTimeout(bpjsTimer); supabase.removeChannel(ch); };
   }, []);
@@ -579,7 +583,7 @@ function AdsContentPage() {
             <ShieldCheck className="size-4 text-emerald-500" /> BPJS Detected per Konten
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Persentase leads dari tiap kode konten yang menyebut kata "BPJS" pada percakapan mereka (dibaca dari seluruh isi chat). Klik untuk melihat siapa saja yang terdeteksi BPJS.
+            Persentase leads dari tiap kode konten yang menyebut keyword kategori BPJS — <b>BPJS</b>, <b>KIS</b>, atau <b>ASKES</b> — pada percakapan mereka (dibaca dari seluruh isi chat). Klik untuk melihat siapa saja yang terdeteksi.
           </p>
         </CardHeader>
         <CardContent>
@@ -629,7 +633,7 @@ function AdsContentPage() {
             <ShieldCheck className="size-4 text-emerald-500" /> Jumlah BPJS per Tanggal
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Total leads yang menyebut "BPJS" per tanggal (seluruh leads, bukan per konten) sesuai filter tanggal aktif.
+            Total leads yang menyebut keyword kategori BPJS (<b>BPJS</b> / <b>KIS</b> / <b>ASKES</b>) per tanggal — seluruh leads, bukan per konten — sesuai filter tanggal aktif.
           </p>
         </CardHeader>
         <CardContent>
@@ -730,7 +734,7 @@ function AdsContentPage() {
               if (!s) return null;
               return (
                 <p className="text-xs text-muted-foreground">
-                  {s.bpjs} dari {s.total} leads ({s.total ? Math.round((s.bpjs / s.total) * 100) : 0}%) menyebut BPJS.
+                  {s.bpjs} dari {s.total} leads ({s.total ? Math.round((s.bpjs / s.total) * 100) : 0}%) menyebut keyword BPJS / KIS / ASKES.
                 </p>
               );
             })()}
