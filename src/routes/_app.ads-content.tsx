@@ -734,7 +734,7 @@ function AdsContentPage() {
               if (!s) return null;
               return (
                 <p className="text-xs text-muted-foreground">
-                  {s.bpjs} dari {s.total} leads ({s.total ? Math.round((s.bpjs / s.total) * 100) : 0}%) menyebut BPJS.
+                  {s.bpjs} dari {s.total} leads ({s.total ? Math.round((s.bpjs / s.total) * 100) : 0}%) menyebut keyword BPJS / KIS / ASKES.
                 </p>
               );
             })()}
