@@ -74,13 +74,13 @@ function AdsContentPage() {
   async function loadBpjs() {
     const { data } = await supabase
       .from("messages")
-      .select("conversations!inner(contact_id)")
-      .ilike("content", "%bpjs%")
+      .select("content, conversations!inner(contact_id)")
+      .or("content.ilike.%bpjs%,content.ilike.%kis%,content.ilike.%askes%")
       .limit(20000);
     const bset = new Set<string>();
     ((data as any[]) || []).forEach((m: any) => {
       const cid = m?.conversations?.contact_id;
-      if (cid) bset.add(cid);
+      if (cid && BPJS_KEYWORD_RE.test(String(m?.content || ""))) bset.add(cid);
     });
     setBpjsContactIds(bset);
   }
@@ -98,10 +98,11 @@ function AdsContentPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "contacts" }, queueBase)
       .on("postgres_changes", { event: "*", schema: "public", table: "content_codes" }, queueBase)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload: any) => {
-        // Hanya refresh BPJS kalau pesannya memang menyebut BPJS
+        // Hanya refresh kalau pesannya menyebut BPJS / KIS / ASKES
         const content = String(payload?.new?.content || "");
-        if (/bpjs/i.test(content)) queueBpjs();
+        if (BPJS_KEYWORD_RE.test(content)) queueBpjs();
       })
+
       .subscribe();
     return () => { clearTimeout(baseTimer); clearTimeout(bpjsTimer); supabase.removeChannel(ch); };
   }, []);
