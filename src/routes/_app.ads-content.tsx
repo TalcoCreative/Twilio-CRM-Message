@@ -583,7 +583,7 @@ function AdsContentPage() {
             <ShieldCheck className="size-4 text-emerald-500" /> BPJS Detected per Konten
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Persentase leads dari tiap kode konten yang menyebut kata "BPJS" pada percakapan mereka (dibaca dari seluruh isi chat). Klik untuk melihat siapa saja yang terdeteksi BPJS.
+            Persentase leads dari tiap kode konten yang menyebut keyword kategori BPJS — <b>BPJS</b>, <b>KIS</b>, atau <b>ASKES</b> — pada percakapan mereka (dibaca dari seluruh isi chat). Klik untuk melihat siapa saja yang terdeteksi.
           </p>
         </CardHeader>
         <CardContent>
