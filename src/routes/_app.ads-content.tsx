@@ -633,7 +633,7 @@ function AdsContentPage() {
             <ShieldCheck className="size-4 text-emerald-500" /> Jumlah BPJS per Tanggal
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Total leads yang menyebut "BPJS" per tanggal (seluruh leads, bukan per konten) sesuai filter tanggal aktif.
+            Total leads yang menyebut keyword kategori BPJS (<b>BPJS</b> / <b>KIS</b> / <b>ASKES</b>) per tanggal — seluruh leads, bukan per konten — sesuai filter tanggal aktif.
           </p>
         </CardHeader>
         <CardContent>
