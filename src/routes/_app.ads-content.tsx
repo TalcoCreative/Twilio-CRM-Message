@@ -41,6 +41,9 @@ type LeadRow = {
 };
 type Product = { id: string; name: string };
 
+/** Kategori BPJS mencakup penyebutan BPJS, KIS, atau ASKES pada chat. */
+const BPJS_KEYWORD_RE = /\b(bpjs|kis|askes)\b/i;
+
 function toDateStr(d: Date) { return d.toISOString().slice(0, 10); }
 function daysAgo(n: number) { const d = new Date(); d.setDate(d.getDate() - n); return toDateStr(d); }
 
