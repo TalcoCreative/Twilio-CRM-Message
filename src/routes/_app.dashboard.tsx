@@ -97,7 +97,7 @@ async function fetchAllRows<T>(query: any, pageSize = 1000): Promise<T[]> {
 function DashboardGate() {
   const { isFirstResponse, loading } = useRole();
   const router = useRouter();
-  useEffect(() => { if (!loading && isFirstResponse) router.navigate({ to: "/inbox" }); }, [loading, isFirstResponse]);
+  useEffect(() => { if (!loading && isFirstResponse) router.navigate({ to: "/inbox", search: {} }); }, [loading, isFirstResponse]);
   if (loading) return <div className="p-8 text-center text-muted-foreground">Memuat...</div>;
   if (isFirstResponse) return null;
   return <Dashboard />;
