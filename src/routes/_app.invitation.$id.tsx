@@ -32,7 +32,7 @@ function InvitationPage() {
   async function load() {
     setLoading(true);
     const { data: invRow, error } = await supabase.from("assignment_invitations").select("*").eq("id", id).maybeSingle();
-    if (error || !invRow) { toast.error("Invitation tidak ditemukan"); router.navigate({ to: "/inbox", search: {} }); return; }
+    if (error || !invRow) { toast.error("Invitation tidak ditemukan"); router.navigate({ to: "/inbox", search: { c: undefined } }); return; }
     setInv(invRow);
     const snapshotAt = (invRow as any).snapshot_at || invRow.created_at;
     const [{ data: c }, { data: conv }, { data: msgs }, { data: fromProf }, { data: st }] = await Promise.all([
@@ -127,7 +127,7 @@ function InvitationPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-3 md:p-6 space-y-4">
-      <Link to="/inbox" search={{}} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+      <Link to="/inbox" search={{ c: undefined }} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Kembali ke Inbox
       </Link>
 
