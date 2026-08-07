@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiTwilioBackfillRouteImport } from './routes/api/twilio-backfill'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppMyLeadsRouteImport } from './routes/_app.my-leads'
 import { Route as AppMyInboxRouteImport } from './routes/_app.my-inbox'
@@ -36,6 +37,11 @@ const AppRoute = AppRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTwilioBackfillRoute = ApiTwilioBackfillRouteImport.update({
+  id: '/api/twilio-backfill',
+  path: '/api/twilio-backfill',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/my-inbox': typeof AppMyInboxRoute
   '/my-leads': typeof AppMyLeadsRoute
   '/settings': typeof AppSettingsRoute
+  '/api/twilio-backfill': typeof ApiTwilioBackfillRoute
   '/invitation/$id': typeof AppInvitationIdRoute
 }
 export interface FileRoutesByTo {
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/my-inbox': typeof AppMyInboxRoute
   '/my-leads': typeof AppMyLeadsRoute
   '/settings': typeof AppSettingsRoute
+  '/api/twilio-backfill': typeof ApiTwilioBackfillRoute
   '/invitation/$id': typeof AppInvitationIdRoute
 }
 export interface FileRoutesById {
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/_app/my-inbox': typeof AppMyInboxRoute
   '/_app/my-leads': typeof AppMyLeadsRoute
   '/_app/settings': typeof AppSettingsRoute
+  '/api/twilio-backfill': typeof ApiTwilioBackfillRoute
   '/_app/invitation/$id': typeof AppInvitationIdRoute
 }
 export interface FileRouteTypes {
@@ -156,6 +165,7 @@ export interface FileRouteTypes {
     | '/my-inbox'
     | '/my-leads'
     | '/settings'
+    | '/api/twilio-backfill'
     | '/invitation/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/my-inbox'
     | '/my-leads'
     | '/settings'
+    | '/api/twilio-backfill'
     | '/invitation/$id'
   id:
     | '__root__'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/_app/my-inbox'
     | '/_app/my-leads'
     | '/_app/settings'
+    | '/api/twilio-backfill'
     | '/_app/invitation/$id'
   fileRoutesById: FileRoutesById
 }
@@ -194,6 +206,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ApiTwilioBackfillRoute: typeof ApiTwilioBackfillRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -217,6 +230,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/twilio-backfill': {
+      id: '/api/twilio-backfill'
+      path: '/api/twilio-backfill'
+      fullPath: '/api/twilio-backfill'
+      preLoaderRoute: typeof ApiTwilioBackfillRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/settings': {
@@ -333,17 +353,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRoute,
+  ApiTwilioBackfillRoute: ApiTwilioBackfillRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
