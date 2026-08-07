@@ -213,6 +213,104 @@ function QuickRepliesTab() {
   );
 }
 
+function todayWib(offsetDays = 0) {
+  const d = new Date(Date.now() + offsetDays * 86400000);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(d);
+}
+
+function TwilioBackfillCard() {
+  const [start, setStart] = useState(todayWib(-3));
+  const [end, setEnd] = useState(todayWib());
+  const [busy, setBusy] = useState<"" | "preview" | "run">("");
+  const [result, setResult] = useState<any>(null);
+
+  async function call(dryRun: boolean) {
+    setBusy(dryRun ? "preview" : "run");
+    setResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/twilio-backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ start_date: start, end_date: end, dry_run: dryRun }),
+      });
+      const j = await res.json();
+      setResult(j);
+      if (!j.success) toast.error(j.error || "Gagal menarik riwayat");
+      else if (dryRun) toast.success(`${j.to_import} pesan siap ditarik (${j.duplicates} sudah ada)`);
+      else toast.success(`${j.imported} pesan masuk ditarik · ${j.new_contacts} lead baru`);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Tarik Riwayat Chat dari Twilio</CardTitle>
+        <CardDescription>
+          Ambil pesan masuk yang tidak sempat tersimpan (misal saat server/credit bermasalah).
+          Pesan yang sudah ada tidak akan diduplikasi, dan waktu asli dari Twilio tetap dipakai
+          supaya statistik dashboard akurat.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tanggal Mulai (WIB)</Label>
+            <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tanggal Akhir (WIB)</Label>
+            <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => call(true)} disabled={!!busy}>
+            {busy === "preview" && <Loader2 className="size-4 mr-2 animate-spin" />} Preview (cek dulu)
+          </Button>
+          <Button onClick={() => call(false)} disabled={!!busy}>
+            {busy === "run" && <Loader2 className="size-4 mr-2 animate-spin" />} Tarik & Masukkan ke Inbox
+          </Button>
+        </div>
+
+        {result && (
+          <div className={`p-3 rounded-md text-sm border ${result.success ? "bg-success/10 border-success/30" : "bg-destructive/10 border-destructive/30 text-destructive"}`}>
+            {result.success ? (
+              <div className="space-y-1">
+                <div className="font-medium flex items-center gap-2">
+                  <CheckCircle2 className="size-4" />
+                  {result.dry_run ? "Hasil preview" : "Selesai ditarik"}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Total pesan dipindai: {result.scanned} · Inbound: {result.inbound} · Sudah ada: {result.duplicates}
+                  {result.dry_run
+                    ? ` · Akan ditarik: ${result.to_import}`
+                    : ` · Ditarik: ${result.imported} · Lead baru: ${result.new_contacts} · Status disinkron: ${result.status_synced}`}
+                </div>
+                {!!result.contacts_preview?.length && (
+                  <div className="text-xs font-mono opacity-80 break-all">
+                    {result.contacts_preview.join(", ")}
+                  </div>
+                )}
+                {!!result.errors?.length && (
+                  <div className="text-xs text-destructive">Gagal: {result.errors.slice(0, 3).join(" | ")}</div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 font-medium">
+                <XCircle className="size-4" /> {result.error || "Gagal"}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function FonnteTab() {
   const [accountSid, setAccountSid] = useState("");
   const [authToken, setAuthToken] = useState("");
