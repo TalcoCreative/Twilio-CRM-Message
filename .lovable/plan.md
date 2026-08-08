@@ -1,52 +1,65 @@
-# Pindah Semua ke VPS Sendiri (Postgres) — Peta Infrastruktur & Rencana Migrasi
+# Migrasi Hybrid: Database + Media ke VPS, Aplikasi Tetap di Lovable
 
-## 1. Infrastruktur yang dipakai sekarang
+## 1. Kondisi sekarang
 
-| Lapisan | Teknologi | Fungsi di CRM Husada |
+| Lapisan | Sekarang | Setelah migrasi |
 |---|---|---|
-| Frontend + SSR | TanStack Start (React 19, Vite), jalan di edge runtime Lovable | Semua halaman: /inbox, /leads, /dashboard, /settings, /ads-content |
-| API internal | TanStack server routes (`src/routes/api/*`) | Backfill Twilio, endpoint publik |
-| Database | Postgres terkelola (Supabase) | 20 tabel: contacts, conversations, messages, audit_events, dll |
-| Data API | PostgREST + RLS | Semua query dari browser lewat `supabase-js`, keamanan per-role (super_admin/admin/agent/first_response) |
-| Auth | GoTrue (Supabase Auth) | Login agent, session, `handle_new_user` trigger |
-| Realtime | Realtime server (WAL → websocket) | Chat inbox live, invitation, dashboard |
-| Storage | Bucket `chat-media` | Foto/video/voice/PDF dari & ke WhatsApp |
-| Fungsi backend | Edge Functions (Deno): twilio-webhook, twilio-send, twilio-status, twilio-followup, manage-agent, dll | Kirim/terima WhatsApp, template, notifikasi agent |
-| WhatsApp | Twilio Programmable Messaging (tetap eksternal, tetap berbayar Twilio) | Inbound webhook + outbound + status callback |
+| Web app (TanStack Start, semua halaman) | Lovable | Tetap di Lovable |
+| Postgres (20 tabel, total 65 MB) | Cloud terkelola | VPS Anda |
+| PostgREST + RLS (semua query browser) | Cloud | VPS |
+| Auth agent (GoTrue) | Cloud | VPS |
+| Realtime (inbox live) | Cloud | VPS |
+| Storage `chat-media` (foto/video/VN/PDF) | Cloud | VPS |
+| Fungsi Twilio (webhook, send, status, followup, manage-agent) | Edge Functions Deno | Dikonversi jadi server route di app Lovable |
+| WhatsApp | Twilio | Tetap Twilio (biaya tidak berubah) |
 
-Ukuran data saat ini kecil: **total DB 65 MB** (messages 15.527 baris / 6,5 MB; gateway logs 25 MB; audit_events 13 MB). Jadi migrasi ringan — bottleneck-nya bukan data, tapi jumlah service yang harus ikut pindah.
+Data saat ini: messages 15.527 baris (6,5 MB), whatsapp_gateway_logs 25 MB, audit_events 13 MB, contacts/conversations masing-masing 938 baris.
 
-## 2. Poin penting sebelum pilih arah
+## 2. Kecocokan VPS 1 vCPU / 4 GB / 50 GB NVMe
 
-"Pakai Postgres saja" tidak cukup: aplikasi ini juga bergantung pada Auth, Realtime, Storage, dan RLS/PostgREST. Kalau hanya menyalakan Postgres polos di VPS, empat lapisan itu harus ditulis ulang dari nol (login, upload media, live chat, aturan akses) — itu pekerjaan besar dan berisiko.
+Cukup untuk skala sekarang, tapi 1 vCPU itu ketat kalau semua service Supabase dinyalakan. Supaya aman:
 
-Ada dua jalur:
+- Jalankan hanya service yang dipakai: Postgres, PostgREST, GoTrue, Realtime, Storage, Kong. Matikan Studio, Analytics/Logflare, Vector, dan Imgproxy (paling rakus CPU/RAM).
+- Tambah swap 2–4 GB sebagai bantalan.
+- Batasi `shared_buffers` ~1 GB dan `max_connections` secukupnya, plus pooler agar koneksi realtime tidak menghabiskan slot.
+- Retensi otomatis untuk `whatsapp_gateway_logs` dan `audit_events` (mis. 90 hari) — dua tabel ini yang paling cepat memakan disk.
+- Media WhatsApp yang menumpuk adalah risiko disk 50 GB terbesar; pantau, dan siapkan opsi pindah media ke object storage murah kalau mendekati 60% penuh.
 
-**Jalur A — Self-host Supabase di VPS (rekomendasi).**
-Satu `docker compose` di VPS berisi Postgres + PostgREST + GoTrue + Realtime + Storage + Kong. Semua kode aplikasi tetap sama; yang berubah hanya URL dan API key di environment. Semua RLS policy, trigger, dan fungsi database ikut apa adanya. Edge Functions Deno bisa dijalankan lewat container `edge-runtime`, atau (lebih rapi) dipindah jadi TanStack server routes di app yang sama.
+## 3. Konsekuensi mode hybrid yang perlu disepakati
 
-**Jalur B — Postgres murni + backend custom.**
-Hemat resource sedikit, tapi butuh menulis ulang autentikasi (JWT + hashing), akses data (semua query browser jadi server function), realtime (websocket sendiri), upload file (disk/S3), dan menerjemahkan seluruh RLS jadi pengecekan di kode. Perkiraan pekerjaan berkali-kali lipat Jalur A, dan setiap fitur harus diuji ulang.
+Aplikasi di Lovable saat ini terhubung ke database lewat modul klien yang dikelola otomatis dan tidak boleh diedit. Supaya app menunjuk ke VPS, dibuat modul klien baru yang membaca URL + key VPS, lalu **19 file** yang sekarang mengimpor klien lama dialihkan ke modul baru (inbox, leads, dashboard, settings, ads-content, invitations, auth, hooks, dan komponen terkait).
 
-## 3. Rencana migrasi (Jalur A)
+Konsekuensinya:
+- Setelah beralih, tool database Lovable (migrasi, query, storage) tidak lagi menyentuh data produksi Anda. Perubahan skema saya serahkan sebagai file SQL untuk Anda jalankan di VPS.
+- VPS harus punya domain + HTTPS (mis. `api.crm.webhaus.id`), karena browser pengguna mengakses database Anda langsung lewat PostgREST/Realtime.
+- CORS di VPS wajib mengizinkan domain app (`crm.webhaus.id` dan URL preview).
 
-1. **Siapkan VPS.** Ubuntu, Docker + Compose, domain (mis. `db.crm.webhaus.id`), Caddy/Nginx untuk TLS otomatis. Firewall: hanya 80/443 terbuka, port Postgres tertutup dari publik.
-2. **Deploy stack Supabase self-host.** Set JWT secret, anon/service key, SMTP untuk email auth, dan volume terpisah untuk data Postgres + storage.
-3. **Pindahkan skema & data.** Dump `public` + `auth` dari database sekarang, restore ke VPS, lalu verifikasi jumlah baris per tabel, enum, trigger, dan semua RLS policy. User dan password agent ikut pindah lewat schema `auth` (tidak perlu reset password).
-4. **Pindahkan file media.** Sinkronkan isi bucket `chat-media` ke storage VPS, cek beberapa URL lama di inbox masih tampil.
-5. **Pindahkan fungsi Twilio.** Jalankan edge-runtime di VPS, atau konversi `twilio-webhook`, `twilio-send`, `twilio-status`, `twilio-followup`, `manage-agent` menjadi route `src/routes/api/public/*` di aplikasi. Semua secret Twilio dipindah ke env VPS.
-6. **Deploy aplikasi web.** Build TanStack Start jalan sebagai container Node di VPS di belakang Caddy, arahkan `crm.webhaus.id` ke sana.
-7. **Update Twilio Console.** Ganti URL webhook inbound dan status callback ke domain VPS. Uji kirim & terima pesan, media, template follow-up.
-8. **Cutover.** Freeze singkat (mis. malam hari), dump ulang delta, pindah DNS, pantau log gateway 24 jam. Rencana rollback: DNS dan webhook dikembalikan ke setup lama.
-9. **Operasional.** `pg_dump` harian ke object storage murah, retensi 14–30 hari, uji restore, monitoring uptime + disk.
+## 4. Langkah migrasi
 
-## 4. Catatan biaya
+1. **Siapkan VPS**: Ubuntu, Docker + Compose, firewall (hanya 80/443 publik, port Postgres tertutup), Caddy untuk TLS otomatis, subdomain `api.crm.webhaus.id`.
+2. **Deploy stack Supabase self-host** dengan service minimal di atas; set JWT secret, anon key, service key, SMTP untuk email auth, volume terpisah untuk data Postgres dan storage.
+3. **Tuning Postgres + swap** sesuai bagian 2.
+4. **Pindahkan skema & data**: dump schema `public` + `auth`, restore di VPS. Verifikasi jumlah baris per tabel, semua enum (`app_role`, `message_type`, dll), 8 fungsi database, 13 trigger, dan seluruh RLS policy. Akun agent ikut pindah lewat schema `auth`, jadi password lama tetap berlaku.
+5. **Pindahkan media**: sinkronkan isi bucket `chat-media` ke storage VPS, cek beberapa lampiran lama di inbox masih tampil.
+6. **Sambungkan app ke VPS**: buat modul klien baru + alihkan 19 file, aktifkan Realtime untuk `messages`, `conversations`, `contacts`, set CORS.
+7. **Pindahkan fungsi Twilio**: konversi `twilio-webhook`, `twilio-send`, `twilio-status`, `twilio-followup`, `twilio-followup-backfill`, `notify-agent-assign`, `manage-agent` menjadi route `src/routes/api/public/*` di app, dengan secret Twilio disimpan sebagai secret app. Validasi signature Twilio disesuaikan dengan URL baru.
+8. **Uji end-to-end di preview**: kirim & terima pesan, media (foto/video/VN/PDF), status delivery, template follow-up, login agent, RLS per role (FR vs agent vs admin), dashboard & ads-content.
+9. **Cutover**: freeze singkat di jam sepi, dump delta terakhir, arahkan app ke VPS, update URL webhook + status callback di Twilio Console, pantau log gateway 24 jam. Rollback = kembalikan URL webhook dan arahkan app ke database lama.
+10. **Operasional**: `pg_dump` harian + backup folder media ke penyimpanan terpisah, retensi 14–30 hari, uji restore sekali, monitoring uptime dan disk.
 
-- Ukuran data 65 MB dengan ~15 ribu pesan: VPS 2 vCPU / 4 GB RAM / 80 GB SSD sudah cukup lapang untuk 12+ bulan ke depan; 4 vCPU / 8 GB kalau ingin kepala lebih longgar untuk realtime dan storage media.
-- Tabel `whatsapp_gateway_logs` (25 MB) dan `audit_events` (13 MB) tumbuh paling cepat — tambahkan job pembersihan retensi (mis. 90 hari) supaya disk tidak boros.
-- Biaya Twilio tidak berubah, karena tetap provider WhatsApp.
-- Yang perlu dianggarkan di luar VPS: SMTP untuk email auth, penyimpanan backup, dan waktu pemeliharaan (update keamanan, monitoring) yang sebelumnya tidak ada.
+## 5. Pembagian tugas
 
-## 5. Batasan yang perlu disepakati
+Saya kerjakan: konversi fungsi Twilio ke server route, modul klien + pengalihan 19 file, file SQL untuk skema/RLS/retensi, docker compose + konfigurasi Caddy, skrip dump/restore dan sinkronisasi media, checklist verifikasi.
 
-Setelah pindah, saya tidak bisa menjalankan migrasi database atau deploy ke VPS Anda dari sini — perubahan skema akan saya berikan sebagai file SQL dan langkah deploy yang Anda jalankan sendiri (atau lewat CI). Kalau Anda ingin tetap bisa iterasi cepat dari Lovable, opsi tengah: database dan media tetap di VPS, aplikasi web tetap di-deploy dari sini.
+Anda kerjakan: provisioning VPS dan DNS, menjalankan compose + skrip di server, mengisi secret di VPS, mengubah URL webhook di Twilio Console.
+
+## 6. Catatan biaya
+
+- VPS yang ada sudah menutup DB + auth + realtime + storage — tidak ada biaya cloud tambahan setelah pindah.
+- Tambahan yang perlu dianggarkan: SMTP untuk email auth, penyimpanan backup di luar VPS, dan waktu pemeliharaan (update keamanan, monitoring).
+- Twilio tetap sesuai pemakaian, tidak berubah.
+- Penghematan nyata baru terasa kalau retensi log dan media dijaga; tanpa itu, disk 50 GB jadi batas dalam beberapa bulan.
+
+## 7. Urutan eksekusi yang disarankan
+
+Tahap 1 (langkah 1–3) siapkan VPS. Tahap 2 (4–5) pindah data & media, database lama tetap jalan. Tahap 3 (6–8) sambungkan dan uji di preview. Tahap 4 (9–10) cutover dan operasional. Setiap tahap bisa dihentikan tanpa mengganggu sistem yang sedang berjalan.
