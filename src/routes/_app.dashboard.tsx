@@ -946,12 +946,17 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const cycleStartTs: Record<string, number> = {};
       const pendingInboundTs: Record<string, number> = {};
       // firstFRActor: FR pertama yang membalas contact DI DALAM rentang.
-      // priorFRActor: FR pertama SEBELUM rentang (dipakai HANYA untuk deteksi
+      // priorFRActor: FR TERAKHIR sebelum rentang (dipakai HANYA untuk deteksi
       // continue conversation — tidak menekan firstChats supaya Total First
       // Response tetap ikut rentang waktu).
+      // lastFRActor: FR terakhir yang memegang percakapan (berjalan terus),
+      // dipakai untuk menghitung operan. Continue = SETIAP kali penanggung jawab
+      // berpindah dari satu FR ke FR lain, sehingga total rentang penuh = jumlah
+      // total sub-periodenya (tidak ada operan yang hilang / dobel).
       const firstFRActor: Record<string, string> = {};
       const firstFRTs: Record<string, number> = {};
       const priorFRActor: Record<string, string> = {};
+      const lastFRActor: Record<string, string> = {};
       const frTouchers: Record<string, string[]> = {};
 
       const eventMessageType = (event: any) => String(event?.new_value?.type || "").toUpperCase();
@@ -963,17 +968,16 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
       const markContinueFromFR = (contactId: string, actorId: string, previousFrId: string | null | undefined, at: string, via: string) => {
         if (!contactId || !actorId || !frUserIds.has(actorId)) return;
-        const seed = firstFRActor[contactId] || priorFRActor[contactId];
-        const initial = seed ? [seed] : [];
-        const list = frTouchers[contactId] = frTouchers[contactId] || initial;
-        if (previousFrId && frUserIds.has(previousFrId) && previousFrId !== actorId && !list.includes(previousFrId)) {
-          list.unshift(previousFrId);
-        }
-        if (list.some((id) => id !== actorId) && !list.includes(actorId)) {
-          list.push(actorId);
+        const explicitPrev = previousFrId && frUserIds.has(previousFrId) ? previousFrId : null;
+        const prev = explicitPrev || lastFRActor[contactId] || priorFRActor[contactId] || null;
+        const list = frTouchers[contactId] = frTouchers[contactId] || [];
+        if (prev && !list.includes(prev)) list.push(prev);
+        if (!list.includes(actorId)) list.push(actorId);
+        if (prev && prev !== actorId) {
           ensureFR(actorId).continuedFromOther++;
-          continueDetails.push({ contact_id: contactId, actor_id: actorId, previous_actor_id: previousFrId || null, at, via });
+          continueDetails.push({ contact_id: contactId, actor_id: actorId, previous_actor_id: prev, at, via });
         }
+        lastFRActor[contactId] = actorId;
         ensureFR(actorId).leadsHandledContactIds.add(contactId);
       };
 
