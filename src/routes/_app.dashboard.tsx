@@ -998,9 +998,9 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         for (const p of priorFR) {
           if (!p.contact_id || !p.actor_id) continue;
           if (isInternalNoteEvent(p)) continue;
-          if (!priorFRActor[p.contact_id]) {
-            priorFRActor[p.contact_id] = p.actor_id;
-          }
+          // simpan FR TERAKHIR sebelum rentang (prior diurut ascending),
+          // supaya operan A → B → A tetap terbaca sebagai continue.
+          priorFRActor[p.contact_id] = p.actor_id;
         }
       }
 
