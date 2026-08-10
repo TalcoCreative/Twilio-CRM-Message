@@ -1036,7 +1036,8 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
               if (prior && prior !== e.actor_id) {
                 markContinueFromFR(e.contact_id, e.actor_id, prior, e.occurred_at, "chat_out");
               }
-              (frTouchers[e.contact_id] = frTouchers[e.contact_id] || []).push(e.actor_id);
+              const tl = frTouchers[e.contact_id] = frTouchers[e.contact_id] || [];
+              if (!tl.includes(e.actor_id)) tl.push(e.actor_id);
             } else if (firstFRActor[e.contact_id] !== e.actor_id) {
               markContinueFromFR(e.contact_id, e.actor_id, firstFRActor[e.contact_id], e.occurred_at, "chat_out");
             }
