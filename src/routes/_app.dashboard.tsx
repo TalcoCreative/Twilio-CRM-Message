@@ -1010,8 +1010,13 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           // simpan FR TERAKHIR sebelum rentang (prior diurut ascending),
           // supaya operan A → B → A tetap terbaca sebagai continue.
           priorFRActor[p.contact_id] = p.actor_id;
+          // daftarkan SEMUA FR yang pernah pegang lead ini sebelum rentang,
+          // supaya operan balik ke FR lama tidak dihitung ulang.
+          const list = frTouchers[p.contact_id] = frTouchers[p.contact_id] || [];
+          if (!list.includes(p.actor_id)) list.push(p.actor_id);
         }
       }
+
 
       const responses: { actor_id: string; contact_id: string; seconds: number; at: string }[] = [];
       const firstResponses: { actor_id: string; contact_id: string; seconds: number; at: string }[] = [];
