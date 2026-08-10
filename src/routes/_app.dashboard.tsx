@@ -972,14 +972,19 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         const prev = explicitPrev || lastFRActor[contactId] || priorFRActor[contactId] || null;
         const list = frTouchers[contactId] = frTouchers[contactId] || [];
         if (prev && !list.includes(prev)) list.push(prev);
-        if (!list.includes(actorId)) list.push(actorId);
-        if (prev && prev !== actorId) {
+        // Continue dihitung UNIK per FR per lead: kalau lead dioper balik ke FR
+        // yang sudah pernah pegang lead ini (termasuk sebelum rentang), tidak
+        // dihitung lagi.
+        const isNewToucher = !list.includes(actorId);
+        if (prev && prev !== actorId && isNewToucher) {
           ensureFR(actorId).continuedFromOther++;
           continueDetails.push({ contact_id: contactId, actor_id: actorId, previous_actor_id: prev, at, via });
         }
+        if (isNewToucher) list.push(actorId);
         lastFRActor[contactId] = actorId;
         ensureFR(actorId).leadsHandledContactIds.add(contactId);
       };
+
 
       // Seed dari histori: kalau contact sudah pernah dibalas FR SEBELUM rentang,
       // set FR pertama itu sebagai firstFRActor supaya balasan FR lain di rentang
