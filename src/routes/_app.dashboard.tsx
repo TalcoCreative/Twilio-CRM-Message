@@ -946,12 +946,17 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const cycleStartTs: Record<string, number> = {};
       const pendingInboundTs: Record<string, number> = {};
       // firstFRActor: FR pertama yang membalas contact DI DALAM rentang.
-      // priorFRActor: FR pertama SEBELUM rentang (dipakai HANYA untuk deteksi
+      // priorFRActor: FR TERAKHIR sebelum rentang (dipakai HANYA untuk deteksi
       // continue conversation — tidak menekan firstChats supaya Total First
       // Response tetap ikut rentang waktu).
+      // lastFRActor: FR terakhir yang memegang percakapan (berjalan terus),
+      // dipakai untuk menghitung operan. Continue = SETIAP kali penanggung jawab
+      // berpindah dari satu FR ke FR lain, sehingga total rentang penuh = jumlah
+      // total sub-periodenya (tidak ada operan yang hilang / dobel).
       const firstFRActor: Record<string, string> = {};
       const firstFRTs: Record<string, number> = {};
       const priorFRActor: Record<string, string> = {};
+      const lastFRActor: Record<string, string> = {};
       const frTouchers: Record<string, string[]> = {};
 
       const eventMessageType = (event: any) => String(event?.new_value?.type || "").toUpperCase();
@@ -963,17 +968,16 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
 
       const markContinueFromFR = (contactId: string, actorId: string, previousFrId: string | null | undefined, at: string, via: string) => {
         if (!contactId || !actorId || !frUserIds.has(actorId)) return;
-        const seed = firstFRActor[contactId] || priorFRActor[contactId];
-        const initial = seed ? [seed] : [];
-        const list = frTouchers[contactId] = frTouchers[contactId] || initial;
-        if (previousFrId && frUserIds.has(previousFrId) && previousFrId !== actorId && !list.includes(previousFrId)) {
-          list.unshift(previousFrId);
-        }
-        if (list.some((id) => id !== actorId) && !list.includes(actorId)) {
-          list.push(actorId);
+        const explicitPrev = previousFrId && frUserIds.has(previousFrId) ? previousFrId : null;
+        const prev = explicitPrev || lastFRActor[contactId] || priorFRActor[contactId] || null;
+        const list = frTouchers[contactId] = frTouchers[contactId] || [];
+        if (prev && !list.includes(prev)) list.push(prev);
+        if (!list.includes(actorId)) list.push(actorId);
+        if (prev && prev !== actorId) {
           ensureFR(actorId).continuedFromOther++;
-          continueDetails.push({ contact_id: contactId, actor_id: actorId, previous_actor_id: previousFrId || null, at, via });
+          continueDetails.push({ contact_id: contactId, actor_id: actorId, previous_actor_id: prev, at, via });
         }
+        lastFRActor[contactId] = actorId;
         ensureFR(actorId).leadsHandledContactIds.add(contactId);
       };
 
@@ -1021,14 +1025,6 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
           if (isFR) {
             const s = ensureFR(e.actor_id);
             if (!firstFRActor[e.contact_id]) {
-              // Kalau contact ini sudah pernah dibalas FR lain SEBELUM rentang,
-              // reply pertama in-range dari FR berbeda tetap dihitung sbg continue.
-              // Cek ini HARUS dijalankan SEBELUM firstFRActor/frTouchers diisi,
-              // kalau tidak guard "agent belum ada di daftar" selalu gagal.
-              const prior = priorFRActor[e.contact_id];
-              if (prior && prior !== e.actor_id) {
-                markContinueFromFR(e.contact_id, e.actor_id, prior, e.occurred_at, "chat_out");
-              }
               firstFRActor[e.contact_id] = e.actor_id;
               firstFRTs[e.contact_id] = t;
               s.firstChats++;
@@ -1036,11 +1032,9 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
               const frSec = cs ? Math.max(0, Math.round((t - cs) / 1000)) : 0;
               if (cs) s.firstRespSecList.push(frSec);
               firstResponses.push({ actor_id: e.actor_id, contact_id: e.contact_id, seconds: frSec, at: e.occurred_at });
-              const tl = frTouchers[e.contact_id] = frTouchers[e.contact_id] || [];
-              if (!tl.includes(e.actor_id)) tl.push(e.actor_id);
-            } else if (firstFRActor[e.contact_id] !== e.actor_id) {
-              markContinueFromFR(e.contact_id, e.actor_id, firstFRActor[e.contact_id], e.occurred_at, "chat_out");
             }
+            // Selalu catat pemegang terakhir; continue terhitung saat pemegang berpindah.
+            markContinueFromFR(e.contact_id, e.actor_id, null, e.occurred_at, "chat_out");
             s.leadsHandledContactIds.add(e.contact_id);
 
             if (pendingInboundTs[e.contact_id]) {
