@@ -1,65 +1,38 @@
-# Migrasi Hybrid: Database + Media ke VPS, Aplikasi Tetap di Lovable
+# Perbaikan hitungan Continue Conversation saat rentang tanggal dipecah
 
-## 1. Kondisi sekarang
+## Temuan (sudah diverifikasi dengan data asli)
 
-| Lapisan | Sekarang | Setelah migrasi |
-|---|---|---|
-| Web app (TanStack Start, semua halaman) | Lovable | Tetap di Lovable |
-| Postgres (20 tabel, total 65 MB) | Cloud terkelola | VPS Anda |
-| PostgREST + RLS (semua query browser) | Cloud | VPS |
-| Auth agent (GoTrue) | Cloud | VPS |
-| Realtime (inbox live) | Cloud | VPS |
-| Storage `chat-media` (foto/video/VN/PDF) | Cloud | VPS |
-| Fungsi Twilio (webhook, send, status, followup, manage-agent) | Edge Functions Deno | Dikonversi jadi server route di app Lovable |
-| WhatsApp | Twilio | Tetap Twilio (biaya tidak berubah) |
+Saya menghitung ulang langsung dari data (`audit_events`) memakai logika yang sama persis dengan dashboard:
 
-Data saat ini: messages 15.527 baris (6,5 MB), whatsapp_gateway_logs 25 MB, audit_events 13 MB, contacts/conversations masing-masing 938 baris.
+- 15–31 Juli: **117**
+- 15–18 Juli: **27**, 19–24 Juli: **41**, 25–31 Juli: **46** → total **114**
 
-## 2. Kecocokan VPS 1 vCPU / 4 GB / 50 GB NVMe
+Selisihnya persis **3 lead**, dan ketiganya adalah kasus **operan antar-FR yang terjadi tepat di batas periode**:
 
-Cukup untuk skala sekarang, tapi 1 vCPU itu ketat kalau semua service Supabase dinyalakan. Supaya aman:
+| Lead | FR sebelumnya | FR penerus | Waktu operan |
+|---|---|---|---|
+| 0b9432bd… | FR C (18 Juli 17:02) | FR A | 19 Juli 12:58 |
+| 95d53d5e… | FR D (18 Juli 22:10) | FR A | 19 Juli 17:41 |
+| 7458b48e… | FR C (24 Juli 17:49) | FR F | 25 Juli 06:51 |
 
-- Jalankan hanya service yang dipakai: Postgres, PostgREST, GoTrue, Realtime, Storage, Kong. Matikan Studio, Analytics/Logflare, Vector, dan Imgproxy (paling rakus CPU/RAM).
-- Tambah swap 2–4 GB sebagai bantalan.
-- Batasi `shared_buffers` ~1 GB dan `max_connections` secukupnya, plus pooler agar koneksi realtime tidak menghabiskan slot.
-- Retensi otomatis untuk `whatsapp_gateway_logs` dan `audit_events` (mis. 90 hari) — dua tabel ini yang paling cepat memakan disk.
-- Media WhatsApp yang menumpuk adalah risiko disk 50 GB terbesar; pantau, dan siapkan opsi pindah media ke object storage murah kalau mendekati 60% penuh.
+Di rentang penuh ketiga operan ini terhitung. Saat dipecah, FR penerus menjadi FR pertama yang membalas di dalam sub-periode itu, dan operannya hilang dari hitungan.
 
-## 3. Konsekuensi mode hybrid yang perlu disepakati
+**Penyebabnya di kode** (`src/routes/_app.dashboard.tsx`, blok First Response): saat sebuah balasan adalah balasan FR pertama di dalam rentang, agent tersebut sudah lebih dulu dimasukkan ke daftar "penyentuh lead" (`frTouchers`) sebelum pengecekan "apakah sebelum rentang ada FR lain". Pengecekan continue punya syarat "agent belum ada di daftar", sehingga syarat itu selalu gagal dan operan lintas-batas tidak pernah dihitung.
 
-Aplikasi di Lovable saat ini terhubung ke database lewat modul klien yang dikelola otomatis dan tidak boleh diedit. Supaya app menunjuk ke VPS, dibuat modul klien baru yang membaca URL + key VPS, lalu **19 file** yang sekarang mengimpor klien lama dialihkan ke modul baru (inbox, leads, dashboard, settings, ads-content, invitations, auth, hooks, dan komponen terkait).
+Artinya: **angka 117 yang benar**, dan angka per-periode-lah yang kurang (undercount), bukan sebaliknya.
 
-Konsekuensinya:
-- Setelah beralih, tool database Lovable (migrasi, query, storage) tidak lagi menyentuh data produksi Anda. Perubahan skema saya serahkan sebagai file SQL untuk Anda jalankan di VPS.
-- VPS harus punya domain + HTTPS (mis. `api.crm.webhaus.id`), karena browser pengguna mengakses database Anda langsung lewat PostgREST/Realtime.
-- CORS di VPS wajib mengizinkan domain app (`crm.webhaus.id` dan URL preview).
+## Yang akan diperbaiki
 
-## 4. Langkah migrasi
+1. Urutkan ulang logikanya: cek dulu apakah ada FR lain sebelum rentang, baru daftarkan agent sebagai penyentuh lead — sehingga operan yang terjadi persis di batas periode ikut terhitung.
+2. Pakai FR **terakhir** sebelum rentang (bukan FR pertama saja) sebagai pembanding, supaya rangkaian operan A → B → A juga terbaca benar.
+3. Setelah perbaikan, hasil per-periode dijumlahkan akan cocok dengan hitungan rentang penuh (117) untuk kasus di atas.
 
-1. **Siapkan VPS**: Ubuntu, Docker + Compose, firewall (hanya 80/443 publik, port Postgres tertutup), Caddy untuk TLS otomatis, subdomain `api.crm.webhaus.id`.
-2. **Deploy stack Supabase self-host** dengan service minimal di atas; set JWT secret, anon key, service key, SMTP untuk email auth, volume terpisah untuk data Postgres dan storage.
-3. **Tuning Postgres + swap** sesuai bagian 2.
-4. **Pindahkan skema & data**: dump schema `public` + `auth`, restore di VPS. Verifikasi jumlah baris per tabel, semua enum (`app_role`, `message_type`, dll), 8 fungsi database, 13 trigger, dan seluruh RLS policy. Akun agent ikut pindah lewat schema `auth`, jadi password lama tetap berlaku.
-5. **Pindahkan media**: sinkronkan isi bucket `chat-media` ke storage VPS, cek beberapa lampiran lama di inbox masih tampil.
-6. **Sambungkan app ke VPS**: buat modul klien baru + alihkan 19 file, aktifkan Realtime untuk `messages`, `conversations`, `contacts`, set CORS.
-7. **Pindahkan fungsi Twilio**: konversi `twilio-webhook`, `twilio-send`, `twilio-status`, `twilio-followup`, `twilio-followup-backfill`, `notify-agent-assign`, `manage-agent` menjadi route `src/routes/api/public/*` di app, dengan secret Twilio disimpan sebagai secret app. Validasi signature Twilio disesuaikan dengan URL baru.
-8. **Uji end-to-end di preview**: kirim & terima pesan, media (foto/video/VN/PDF), status delivery, template follow-up, login agent, RLS per role (FR vs agent vs admin), dashboard & ads-content.
-9. **Cutover**: freeze singkat di jam sepi, dump delta terakhir, arahkan app ke VPS, update URL webhook + status callback di Twilio Console, pantau log gateway 24 jam. Rollback = kembalikan URL webhook dan arahkan app ke database lama.
-10. **Operasional**: `pg_dump` harian + backup folder media ke penyimpanan terpisah, retensi 14–30 hari, uji restore sekali, monitoring uptime dan disk.
+Catatan: memecah rentang tetap tidak selalu menghasilkan penjumlahan identik untuk semua skenario (satu lead yang dioper bolak-balik di dua periode berbeda wajar terhitung di masing-masing periode). Tapi kasus "hilang" seperti 3 lead ini akan hilang.
 
-## 5. Pembagian tugas
+## Teknis
 
-Saya kerjakan: konversi fungsi Twilio ke server route, modul klien + pengalihan 19 file, file SQL untuk skema/RLS/retensi, docker compose + konfigurasi Caddy, skrip dump/restore dan sinkronisasi media, checklist verifikasi.
-
-Anda kerjakan: provisioning VPS dan DNS, menjalankan compose + skrip di server, mengisi secret di VPS, mengubah URL webhook di Twilio Console.
-
-## 6. Catatan biaya
-
-- VPS yang ada sudah menutup DB + auth + realtime + storage — tidak ada biaya cloud tambahan setelah pindah.
-- Tambahan yang perlu dianggarkan: SMTP untuk email auth, penyimpanan backup di luar VPS, dan waktu pemeliharaan (update keamanan, monitoring).
-- Twilio tetap sesuai pemakaian, tidak berubah.
-- Penghematan nyata baru terasa kalau retensi log dan media dijaga; tanpa itu, disk 50 GB jadi batas dalam beberapa bulan.
-
-## 7. Urutan eksekusi yang disarankan
-
-Tahap 1 (langkah 1–3) siapkan VPS. Tahap 2 (4–5) pindah data & media, database lama tetap jalan. Tahap 3 (6–8) sambungkan dan uji di preview. Tahap 4 (9–10) cutover dan operasional. Setiap tahap bisa dihentikan tanpa mengganggu sistem yang sedang berjalan.
+- File: `src/routes/_app.dashboard.tsx`
+- Fungsi terkait: `markContinueFromFR`, seeding `priorFRActor`, dan cabang `event_type === "chat_out"` pada loop `evs`.
+- `priorFRActor` diubah menyimpan FR terakhir sebelum `startISO` (query prior sudah ada, tinggal ubah cara pengisian).
+- Drill-down (`continueDetails`) otomatis ikut benar karena memakai jalur yang sama.
+- Verifikasi: bandingkan ulang total 15–31 Juli vs jumlah tiga sub-periode setelah perubahan.
