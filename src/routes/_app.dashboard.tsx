@@ -1028,13 +1028,15 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
               const frSec = cs ? Math.max(0, Math.round((t - cs) / 1000)) : 0;
               if (cs) s.firstRespSecList.push(frSec);
               firstResponses.push({ actor_id: e.actor_id, contact_id: e.contact_id, seconds: frSec, at: e.occurred_at });
-              (frTouchers[e.contact_id] = frTouchers[e.contact_id] || []).push(e.actor_id);
               // Kalau contact ini sudah pernah dibalas FR lain SEBELUM rentang,
               // reply pertama in-range dari FR berbeda tetap dihitung sbg continue.
+              // Cek ini HARUS dilakukan sebelum actor didaftarkan ke frTouchers,
+              // kalau tidak guard "belum ada di daftar" selalu gagal.
               const prior = priorFRActor[e.contact_id];
               if (prior && prior !== e.actor_id) {
                 markContinueFromFR(e.contact_id, e.actor_id, prior, e.occurred_at, "chat_out");
               }
+              (frTouchers[e.contact_id] = frTouchers[e.contact_id] || []).push(e.actor_id);
             } else if (firstFRActor[e.contact_id] !== e.actor_id) {
               markContinueFromFR(e.contact_id, e.actor_id, firstFRActor[e.contact_id], e.occurred_at, "chat_out");
             }
