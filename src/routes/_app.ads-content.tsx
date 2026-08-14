@@ -63,30 +63,54 @@ function AdsContentPage() {
 
   const [loading, setLoading] = useState(true);
 
+  /** Ambil semua baris tanpa batas 1000 (paginasi otomatis). */
+  async function fetchAllRows(build: (from: number, to: number) => any) {
+    const pageSize = 1000;
+    const rows: any[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await build(from, from + pageSize - 1);
+      if (error) break;
+      const chunk = (data as any[]) || [];
+      rows.push(...chunk);
+      if (chunk.length < pageSize) break;
+    }
+    return rows;
+  }
+
   async function loadBase() {
     const [c, l, p] = await Promise.all([
       supabase.from("content_codes").select("*").order("created_at", { ascending: false }),
-      supabase.from("contacts").select("id, full_name, whatsapp_number, content_code_id, source, interested_product_id, created_at").order("created_at", { ascending: false }).limit(5000),
+      fetchAllRows((f, t) =>
+        supabase
+          .from("contacts")
+          .select("id, full_name, whatsapp_number, content_code_id, source, interested_product_id, created_at")
+          .order("created_at", { ascending: false })
+          .range(f, t),
+      ),
       supabase.from("products").select("id, name").eq("is_active", true).order("sort_order"),
     ]);
     setCodes((c.data as any) || []);
-    setLeads((l.data as any) || []);
+    setLeads((l as any) || []);
     setProducts((p.data as any) || []);
   }
 
   async function loadBpjs() {
-    const { data } = await supabase
-      .from("messages")
-      .select("content, conversations!inner(contact_id)")
-      .or("content.ilike.%bpjs%,content.ilike.%kis%,content.ilike.%askes%")
-      .limit(20000);
+    const data = await fetchAllRows((f, t) =>
+      supabase
+        .from("messages")
+        .select("content, conversations!inner(contact_id)")
+        .or("content.ilike.%bpjs%,content.ilike.%kis%,content.ilike.%askes%")
+        .order("created_at", { ascending: false })
+        .range(f, t),
+    );
     const bset = new Set<string>();
-    ((data as any[]) || []).forEach((m: any) => {
+    (data || []).forEach((m: any) => {
       const cid = m?.conversations?.contact_id;
       if (cid && BPJS_KEYWORD_RE.test(String(m?.content || ""))) bset.add(cid);
     });
     setBpjsContactIds(bset);
   }
+
 
   useEffect(() => {
     // Render tabel/kode secepatnya, data BPJS (query berat) menyusul di background
