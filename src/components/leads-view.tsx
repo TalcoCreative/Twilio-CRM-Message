@@ -115,7 +115,7 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
       supabase.from("content_codes").select("id, code, name, is_active").eq("is_active", true).order("code"),
     ]);
 
-    let list = ((c.data as any) || []).map((row: any) => ({
+    let list = (c || []).map((row: any) => ({
       ...row,
       assigned_agent_id: row.conversations?.[0]?.assigned_agent_id || null,
     }));
