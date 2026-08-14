@@ -89,15 +89,33 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
     load();
   }
 
+  async function fetchAllContacts() {
+    const pageSize = 1000;
+    const rows: any[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("*, stages(name, color), conversations(assigned_agent_id)")
+        .order("created_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) { toast.error(error.message); break; }
+      const chunk = (data as any[]) || [];
+      rows.push(...chunk);
+      if (chunk.length < pageSize) break;
+    }
+    return rows;
+  }
+
   async function load() {
     const [c, s, p, pr, cc] = await Promise.all([
-      supabase.from("contacts").select("*, stages(name, color), conversations(assigned_agent_id)").order("created_at", { ascending: false }),
+      fetchAllContacts(),
       supabase.from("stages").select("*").order("order_index"),
       supabase.from("products").select("id, name").order("sort_order"),
       supabase.from("profiles").select("id, full_name, email").eq("is_active", true),
       supabase.from("content_codes").select("id, code, name, is_active").eq("is_active", true).order("code"),
     ]);
-    let list = ((c.data as any) || []).map((row: any) => ({
+
+    let list = (c || []).map((row: any) => ({
       ...row,
       assigned_agent_id: row.conversations?.[0]?.assigned_agent_id || null,
     }));
