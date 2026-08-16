@@ -14,6 +14,7 @@ import { formatDistanceToNow } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { useAuth } from "@/hooks/use-auth";
 import { useRole } from "@/hooks/use-role";
+import { getCached, setCached } from "@/lib/data-cache";
 
 export const Route = createFileRoute("/_app/inbox")({
   head: () => ({ meta: [{ title: "Inbox — Husada CRM" }] }),
@@ -80,13 +81,15 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  const convCacheKey = `inbox:convs:${mineOnly ? user?.id ?? "none" : "team"}`;
+
   async function loadConversations() {
     // Kalau My Inbox tapi user belum ready, jangan fetch — hindari flash "semua chat".
     if (mineOnly && !user) { setConversations([]); return; }
     const pageSize = 1000;
     let from = 0;
     const all: any[] = [];
-    // Paginate agar semua percakapan terambil (bypass batas default PostgREST 1000).
+    // Halaman pertama langsung dirender, sisanya menyusul di belakang layar.
     while (true) {
       let q = supabase
         .from("conversations")
@@ -97,9 +100,11 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       const { data, error } = await q;
       if (error || !data || data.length === 0) break;
       all.push(...data);
+      setConversations(all.slice() as any);
       if (data.length < pageSize) break;
       from += pageSize;
     }
+    setCached(convCacheKey, all);
     setConversations(all as any);
   }
 
@@ -113,21 +118,44 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     ]);
     const pmap: Record<string, Profile> = {};
     (p.data || []).forEach((x: any) => { pmap[x.id] = x; });
-    setProfiles(pmap);
-    setAgents((p.data as any) || []);
-    setStages((s.data as any) || []);
-    setProducts((pr.data as any) || []);
-    setQuickReplies((qr.data as any) || []);
+    const meta = {
+      pmap,
+      agents: ((p.data as any) || []) as Profile[],
+      stages: ((s.data as any) || []) as Stage[],
+      products: ((pr.data as any) || []) as Product[],
+      quickReplies: ((qr.data as any) || []) as QuickReply[],
+      deviceLabel: "",
+    };
     const sMap = (ss.data || []).reduce((acc: any, x: any) => { acc[x.key] = x.value; return acc; }, {});
     const label = sMap.device_label || sMap.twilio_whatsapp_from || sMap.fonnte_device;
-    setDeviceLabel(label ? `WA · ${label}` : "WA");
+    meta.deviceLabel = label ? `WA · ${label}` : "WA";
+    setCached("inbox:meta", meta);
+    applyMeta(meta);
   }
 
-  useEffect(() => { loadConversations(); loadMeta(); }, [mineOnly, user?.id]);
+  function applyMeta(meta: any) {
+    setProfiles(meta.pmap);
+    setAgents(meta.agents);
+    setStages(meta.stages);
+    setProducts(meta.products);
+    setQuickReplies(meta.quickReplies);
+    setDeviceLabel(meta.deviceLabel);
+  }
 
   useEffect(() => {
-    const refresh = () => loadConversations();
-    const interval = window.setInterval(refresh, 8_000);
+    // Tampilkan data cache dulu (instan), baru refresh di belakang layar.
+    const cachedConvs = getCached<any[]>(convCacheKey);
+    if (cachedConvs) setConversations(cachedConvs as any);
+    const cachedMeta = getCached<any>("inbox:meta");
+    if (cachedMeta) applyMeta(cachedMeta);
+    loadConversations();
+    loadMeta();
+  }, [mineOnly, user?.id]);
+
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === "visible") loadConversations(); };
+    // Realtime yang jadi sumber utama; polling penuh cukup jarang agar UI ringan.
+    const interval = window.setInterval(refresh, 30_000);
     const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", onVisible);
@@ -199,15 +227,25 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
   useEffect(() => {
     if (!activeId) { setMessages([]); return; }
+    // Tampilkan pesan dari cache dulu supaya chat terbuka seketika.
+    const cachedMsgs = getCached<Message[]>(`inbox:msgs:${activeId}`);
+    setMessages(cachedMsgs ? cachedMsgs.slice() : []);
+    let alive = true;
     const loadActiveMessages = async () => {
       const { data } = await supabase.from("messages").select("*")
         .eq("conversation_id", activeId).order("sent_at", { ascending: true });
-      setMessages((data as any) || []);
+      if (!alive) return;
+      const rows = ((data as any) || []) as Message[];
+      setCached(`inbox:msgs:${activeId}`, rows);
+      setMessages(rows);
       await supabase.from("conversations").update({ unread_count: 0 }).eq("id", activeId);
     };
     loadActiveMessages();
-    const interval = window.setInterval(loadActiveMessages, 8_000);
-    return () => window.clearInterval(interval);
+    // Realtime sudah menangani pesan baru; polling hanya jaring pengaman.
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadActiveMessages();
+    }, 20_000);
+    return () => { alive = false; window.clearInterval(interval); };
   }, [activeId]);
 
   useEffect(() => {
