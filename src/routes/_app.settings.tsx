@@ -30,7 +30,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 function SettingsPage() {
   const [tab, setTab] = useState("gateway");
   const tabs = [
-    { v: "gateway", label: "WhatsApp Gateway" },
+    { v: "gateway", label: "Developer Mode" },
     { v: "stages", label: "Stages Pipeline" },
     { v: "flow", label: "Bot Workflow" },
     { v: "categories", label: "Kategori Pertanyaan" },
