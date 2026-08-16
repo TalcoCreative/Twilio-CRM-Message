@@ -89,9 +89,19 @@ function AdsContentPage() {
       ),
       supabase.from("products").select("id, name").eq("is_active", true).order("sort_order"),
     ]);
-    setCodes((c.data as any) || []);
-    setLeads((l as any) || []);
-    setProducts((p.data as any) || []);
+    const payload = {
+      codes: (c.data as any) || [],
+      leads: (l as any) || [],
+      products: (p.data as any) || [],
+    };
+    setCached("ads:base", payload);
+    applyBase(payload);
+  }
+
+  function applyBase(payload: any) {
+    setCodes(payload.codes);
+    setLeads(payload.leads);
+    setProducts(payload.products);
   }
 
   async function loadBpjs() {
@@ -108,11 +118,17 @@ function AdsContentPage() {
       const cid = m?.conversations?.contact_id;
       if (cid && BPJS_KEYWORD_RE.test(String(m?.content || ""))) bset.add(cid);
     });
+    setCached("ads:bpjs", Array.from(bset));
     setBpjsContactIds(bset);
   }
 
 
   useEffect(() => {
+    // Data cache tampil dulu (instan), lalu direfresh di belakang layar.
+    const cachedBase = getCached<any>("ads:base");
+    if (cachedBase) { applyBase(cachedBase); setLoading(false); }
+    const cachedBpjs = getCached<string[]>("ads:bpjs");
+    if (cachedBpjs) setBpjsContactIds(new Set(cachedBpjs));
     // Render tabel/kode secepatnya, data BPJS (query berat) menyusul di background
     loadBase().finally(() => setLoading(false));
     loadBpjs();

@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getCached, setCached } from "@/lib/data-cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -313,7 +314,11 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
   const [data, setData] = useState<any>(null);
   const [selectedAgent, setSelectedAgent] = useState<any>(null);
 
+  const cacheKey = `dash:overview:${startISO}:${endISO}:${user?.id || ""}:${scopeIds ? Array.from(scopeIds).sort().join(",") : "all"}`;
+
   useEffect(() => {
+    const cached = getCached<any>(cacheKey);
+    if (cached) setData(cached);
     (async () => {
       const startDate = localDateKey(new Date(startISO));
       const endDate = localDateKey(new Date(endISO));
@@ -558,14 +563,14 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       }).filter((a): a is any => !!a && (a.historicalTotal > 0 || a.currentCount > 0))
         .sort((a, b) => b.currentCount - a.currentCount || b.historicalUnique - a.historicalUnique);
 
-      setData({
+      setData(setCached(cacheKey, {
         totalContacts: allContacts.length,               // Total Leads = seluruh /leads
         openConv: openConvsAll.length,                   // Percakapan Aktif = seluruh open
         messagesRange: (msgsList || []).length,          // Pesan = seluruh bubble di rentang
         teamAvg, agentStats, stageDist, productDist, topStage, totalRevenue,
         myInbox, dailySeries, transitions,
         agentLeadStats, contactMap, buckets,
-      });
+      }));
     })();
   }, [startISO, endISO, user?.id, profiles, scopeIds]);
 
@@ -889,7 +894,11 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
     })();
   }, []);
 
+  const frCacheKey = `dash:fr:${startISO}:${endISO}:${slaGreen}:${slaYellow}:${selectedAgent || "all"}:${Array.from(frUserIds).sort().join(",")}`;
+
   useEffect(() => {
+    const cachedFr = getCached<any>(frCacheKey);
+    if (cachedFr) setData(cachedFr);
     (async () => {
       const [evs, invs, invSent, invResponded, convs, contacts] = await Promise.all([
         fetchAllRows<any>(supabase.from("audit_events")
@@ -1285,7 +1294,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         ? closingDetails.filter((d) => d.touchers.length > 1 && d.touchers.includes(selectedAgent))
         : closingDetails.filter((d) => d.touchers.length > 1);
 
-      setData({
+      setData(setCached(frCacheKey, {
         newLeads, answered: answeredContacts.size, totalResp, avgSec,
         avgFirstRespSec, unresponded, slaCount, slaPct, hourBuckets,
         totalFirst, totalContinue, totalClosing, totalShare, avgHandle,
@@ -1299,7 +1308,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         invPendingDetails: invSentScoped.filter((i: any) => i.status === "pending"),
 
         nameById, contactById,
-      });
+      }));
     })();
   }, [startISO, endISO, slaGreen, slaYellow, profiles, selectedAgent, frUserIds]);
 

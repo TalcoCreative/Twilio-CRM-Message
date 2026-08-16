@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { getCached, setCached } from "@/lib/data-cache";
 import { normalizeWa } from "@/lib/phone";
 
 import { Button } from "@/components/ui/button";
@@ -106,6 +107,19 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
     return rows;
   }
 
+  function applyLeadsData(payload: any) {
+    let list = (payload.contacts || []).map((row: any) => ({
+      ...row,
+      assigned_agent_id: row.conversations?.[0]?.assigned_agent_id || null,
+    }));
+    if (mineOnly && user) list = list.filter((r: any) => r.assigned_agent_id === user.id);
+    setContacts(list);
+    setStages(payload.stages || []);
+    setProducts(payload.products || []);
+    setAgents(payload.agents || []);
+    setContentCodes(payload.contentCodes || []);
+  }
+
   async function load() {
     const [c, s, p, pr, cc] = await Promise.all([
       fetchAllContacts(),
@@ -114,19 +128,22 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
       supabase.from("profiles").select("id, full_name, email").eq("is_active", true),
       supabase.from("content_codes").select("id, code, name, is_active").eq("is_active", true).order("code"),
     ]);
-
-    let list = (c || []).map((row: any) => ({
-      ...row,
-      assigned_agent_id: row.conversations?.[0]?.assigned_agent_id || null,
-    }));
-    if (mineOnly && user) list = list.filter((r: any) => r.assigned_agent_id === user.id);
-    setContacts(list);
-    setStages((s.data as any) || []);
-    setProducts((p.data as any) || []);
-    setAgents((pr.data as any) || []);
-    setContentCodes((cc.data as any) || []);
+    const payload = {
+      contacts: c || [],
+      stages: (s.data as any) || [],
+      products: (p.data as any) || [],
+      agents: (pr.data as any) || [],
+      contentCodes: (cc.data as any) || [],
+    };
+    setCached("leads:data", payload);
+    applyLeadsData(payload);
   }
-  useEffect(() => { load(); }, [mineOnly, user?.id]);
+  useEffect(() => {
+    const cached = getCached<any>("leads:data");
+    if (cached) applyLeadsData(cached);
+    load();
+  }, [mineOnly, user?.id]);
+
 
   useEffect(() => {
     const ch = supabase.channel("leads-live-" + (mineOnly ? "mine" : "all"))
