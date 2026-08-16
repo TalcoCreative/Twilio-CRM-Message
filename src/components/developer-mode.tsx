@@ -5,8 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw } from "lucide-react";
+import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw, Cloud, CloudOff, ListChecks, AlertTriangle } from "lucide-react";
 
 const DEV_PIN = "250321";
 const SESSION_KEY = "husada_dev_mode_ok";
@@ -101,54 +106,113 @@ function CodeBlock({ title, code }: { title?: string; code: string }) {
   );
 }
 
+/** Seluruh tabel public yang wajib ikut termirror. */
+const PUBLIC_TABLES = [
+  "activity_logs", "agent_shifts", "assignment_invitations", "audit_events", "contacts",
+  "content_codes", "conversations", "fr_date_shifts", "messages", "products", "profiles",
+  "shifts", "stages", "system_settings", "templates", "user_roles", "whatsapp_gateway_logs",
+  "workflow_steps", "workflows",
+] as const;
+
+/** Objek non-tabel yang juga harus ikut pindah. */
+const EXTRA_OBJECTS = [
+  { label: "Schema auth (akun login, sesi, identitas OAuth)", detail: "auth.users, auth.identities, auth.sessions" },
+  { label: "Schema storage (metadata media chat)", detail: "storage.buckets, storage.objects — file fisik disalin terpisah" },
+  { label: "Bucket file chat-media", detail: "gambar, video, voice note, dokumen" },
+  { label: "Enum & tipe kustom", detail: "app_role, conversation_status, message_direction, message_status, message_type" },
+  { label: "Function & trigger", detail: "has_role, is_admin, fr_can_see_*, handle_new_user, log_* , touch_updated_at" },
+  { label: "RLS policy + GRANT", detail: "ikut otomatis pada pg_dump seluruh database" },
+  { label: "Secret Twilio & API key", detail: "TWILIO_* , SUPABASE_* — diisi ulang di .env VPS" },
+];
+
 type VpsCfg = {
   vps_host: string;
   vps_ssh_user: string;
   vps_pg_port: string;
   vps_pg_db: string;
   vps_pg_user: string;
+  vps_api_url: string;
+  vps_anon_key: string;
   vps_mirror_enabled: string;
   vps_last_sync_at: string;
+  data_backend_mode: string; // cloud | dual | vps
 };
 
 const CFG_KEYS: (keyof VpsCfg)[] = [
   "vps_host", "vps_ssh_user", "vps_pg_port", "vps_pg_db", "vps_pg_user",
-  "vps_mirror_enabled", "vps_last_sync_at",
+  "vps_api_url", "vps_anon_key", "vps_mirror_enabled", "vps_last_sync_at", "data_backend_mode",
+];
+
+const MODES = [
+  { id: "cloud", label: "Lovable Cloud saja", desc: "Kondisi sekarang. Semua data di cloud, VPS tidak dipakai." },
+  { id: "dual", label: "Lovable + VPS (mirroring)", desc: "Cloud tetap utama, VPS menerima salinan penuh tiap jam. Paling aman." },
+  { id: "vps", label: "VPS saja (cloud dimatikan)", desc: "App membaca dari VPS. Cloud boleh dinonaktifkan setelah verifikasi." },
 ];
 
 /** Panel konfigurasi + tutorial mirroring database ke VPS sendiri. */
 export function VpsMirrorPanel() {
   const [cfg, setCfg] = useState<VpsCfg>({
     vps_host: "", vps_ssh_user: "root", vps_pg_port: "5432",
-    vps_pg_db: "husada", vps_pg_user: "husada", vps_mirror_enabled: "false", vps_last_sync_at: "",
+    vps_pg_db: "husada", vps_pg_user: "husada", vps_api_url: "", vps_anon_key: "",
+    vps_mirror_enabled: "false", vps_last_sync_at: "", data_backend_mode: "cloud",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [counts, setCounts] = useState<Record<string, number | null>>({});
+  const [counting, setCounting] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<string | null>(null);
+  const [ack, setAck] = useState(false);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from("system_settings").select("key,value").in("key", CFG_KEYS as string[]);
-      const next = { ...cfg };
-      (data || []).forEach((r: any) => { if (r.value != null) (next as any)[r.key] = r.value; });
-      setCfg(next);
+      setCfg((prev) => {
+        const next = { ...prev };
+        (data || []).forEach((r: any) => { if (r.value != null) (next as any)[r.key] = r.value; });
+        return next;
+      });
       setLoading(false);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function save() {
+  async function save(patch?: Partial<VpsCfg>) {
+    const merged = { ...cfg, ...(patch || {}) };
     setSaving(true);
-    const rows = CFG_KEYS.map((k) => ({ key: k, value: cfg[k] ?? "" }));
+    const rows = CFG_KEYS.map((k) => ({ key: k, value: merged[k] ?? "" }));
     const { error } = await supabase.from("system_settings").upsert(rows, { onConflict: "key" });
     setSaving(false);
     if (error) toast.error(error.message);
-    else toast.success("Konfigurasi VPS disimpan");
+    else toast.success("Konfigurasi tersimpan");
+  }
+
+  async function countRows() {
+    setCounting(true);
+    const result: Record<string, number | null> = {};
+    for (const t of PUBLIC_TABLES) {
+      const { count, error } = await supabase.from(t as any).select("*", { count: "exact", head: true });
+      result[t] = error ? null : (count ?? 0);
+    }
+    setCounts(result);
+    setCounting(false);
+    toast.success("Jumlah baris cloud diperbarui");
+  }
+
+  function applyMode(id: string) {
+    if (id === cfg.data_backend_mode) return;
+    setAck(false);
+    setConfirmMode(id);
   }
 
   const host = cfg.vps_host || "IP_VPS_ANDA";
   const pgUser = cfg.vps_pg_user || "husada";
   const pgDb = cfg.vps_pg_db || "husada";
   const pgPort = cfg.vps_pg_port || "5432";
+  const apiUrl = cfg.vps_api_url || `https://api.${host}`;
+
+  const totalRows = useMemo(
+    () => Object.values(counts).reduce<number>((a, b) => a + (b ?? 0), 0),
+    [counts],
+  );
 
   const snippets = useMemo(() => ({
     prepare: `# 1) Siapkan Postgres di VPS (Ubuntu 22.04+)
@@ -156,17 +220,29 @@ sudo apt update && sudo apt install -y postgresql-16 postgresql-client-16
 sudo -u postgres psql -c "CREATE USER ${pgUser} WITH PASSWORD 'GANTI_PASSWORD' SUPERUSER;"
 sudo -u postgres psql -c "CREATE DATABASE ${pgDb} OWNER ${pgUser};"
 
+# Role bawaan Supabase (wajib, agar GRANT & RLS ikut terpasang)
+sudo -u postgres psql -d ${pgDb} <<'SQL'
+DO $$ BEGIN
+  CREATE ROLE anon NOLOGIN NOINHERIT;
+  CREATE ROLE authenticated NOLOGIN NOINHERIT;
+  CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
+  CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'GANTI_PASSWORD';
+  CREATE ROLE supabase_auth_admin NOINHERIT LOGIN PASSWORD 'GANTI_PASSWORD' CREATEROLE;
+  CREATE ROLE supabase_storage_admin NOINHERIT LOGIN PASSWORD 'GANTI_PASSWORD' CREATEROLE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+GRANT anon, authenticated, service_role TO authenticator;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+SQL
+
 # Aktifkan koneksi luar + WAL logical (untuk replikasi realtime nanti)
 sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/16/main/postgresql.conf
 echo "wal_level = logical" | sudo tee -a /etc/postgresql/16/main/postgresql.conf
 echo "host all all 0.0.0.0/0 scram-sha-256" | sudo tee -a /etc/postgresql/16/main/pg_hba.conf
 sudo systemctl restart postgresql
-
-# Batasi akses hanya dari IP yang dipercaya
 sudo ufw allow from 0.0.0.0/0 to any port ${pgPort} proto tcp`,
 
-    mirror: `# 2) Mirroring berkala (cron di VPS) — snapshot penuh, aman & sederhana
-# Simpan connection string cloud di file rahasia:
+    mirror: `# 2) Mirroring SELURUH database (public + auth + storage) tiap jam
 sudo install -m 600 /dev/null /root/.husada_cloud_url
 echo 'postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres' | sudo tee /root/.husada_cloud_url >/dev/null
 
@@ -174,67 +250,115 @@ sudo tee /usr/local/bin/husada-mirror.sh >/dev/null <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 SRC=$(cat /root/.husada_cloud_url)
+DST="postgresql://${pgUser}@127.0.0.1:${pgPort}/${pgDb}"
 STAMP=$(date +%F_%H%M)
 DIR=/var/backups/husada; mkdir -p "$DIR"
-pg_dump --no-owner --no-privileges -Fc "$SRC" -f "$DIR/cloud_$STAMP.dump"
-pg_restore --clean --if-exists --no-owner --no-privileges \\
-  -d "postgresql://${pgUser}@127.0.0.1:${pgPort}/${pgDb}" "$DIR/cloud_$STAMP.dump"
+
+# Dump seluruh schema aplikasi + akun login + metadata storage
+pg_dump --no-owner --no-privileges -Fc \\
+  --schema=public --schema=auth --schema=storage \\
+  "$SRC" -f "$DIR/cloud_$STAMP.dump"
+
+pg_restore --clean --if-exists --no-owner --no-privileges -d "$DST" "$DIR/cloud_$STAMP.dump"
 find "$DIR" -name 'cloud_*.dump' -mtime +14 -delete
 EOF
 sudo chmod +x /usr/local/bin/husada-mirror.sh
 
-# Jalankan tiap jam
 ( sudo crontab -l 2>/dev/null; echo "0 * * * * /usr/local/bin/husada-mirror.sh >> /var/log/husada-mirror.log 2>&1" ) | sudo crontab -`,
 
-    realtime: `# 3) (Opsional) Mirroring nyaris realtime — logical replication
-# Di database cloud (sumber):
+    media: `# 3) Mirroring file media (bucket chat-media) tiap jam
+# Pakai rclone dengan endpoint S3 Supabase Storage
+sudo apt install -y rclone
+rclone config create supa s3 provider=Other \\
+  access_key_id=STORAGE_ACCESS_KEY secret_access_key=STORAGE_SECRET_KEY \\
+  endpoint=https://PROJECT.supabase.co/storage/v1/s3 region=ap-southeast-1
+
+rclone sync supa:chat-media /var/lib/husada/chat-media --fast-list -P
+( sudo crontab -l 2>/dev/null; echo "15 * * * * rclone sync supa:chat-media /var/lib/husada/chat-media >> /var/log/husada-media.log 2>&1" ) | sudo crontab -`,
+
+    realtime: `# 4) (Opsional) Mirroring nyaris realtime — logical replication
+-- Di database cloud (sumber):
 CREATE PUBLICATION husada_pub FOR ALL TABLES;
 
-# Di VPS (tujuan) — struktur tabel harus sudah ada (hasil pg_restore --schema-only):
+-- Di VPS (struktur harus sudah ada dari pg_restore --schema-only):
 CREATE SUBSCRIPTION husada_sub
   CONNECTION 'postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres'
   PUBLICATION husada_pub
   WITH (copy_data = true, create_slot = true);
 
--- Cek status:
 SELECT * FROM pg_stat_subscription;`,
 
-    selfhost: `# 4) Jalankan stack Supabase (Auth + Realtime + Storage + API) di VPS
+    selfhost: `# 5) Jalankan stack Supabase (Auth + Realtime + Storage + API) di VPS
 git clone --depth 1 https://github.com/supabase/supabase /opt/supabase
 cd /opt/supabase/docker && cp .env.example .env
 
-# Edit .env: POSTGRES_PASSWORD, JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY,
-# SITE_URL=https://crm.webhaus.id, API_EXTERNAL_URL=https://api.${host}
+# Isi .env:
+#   POSTGRES_HOST=127.0.0.1  POSTGRES_DB=${pgDb}  POSTGRES_PORT=${pgPort}
+#   JWT_SECRET / ANON_KEY / SERVICE_ROLE_KEY  (generate baru, simpan aman)
+#   SITE_URL=https://crm.webhaus.id
+#   API_EXTERNAL_URL=${apiUrl}
 docker compose up -d
 
 # Hemat RAM (VPS 4GB): matikan service berat
 docker compose stop studio analytics imgproxy vector`,
 
-    cutover: `# 5) Cutover — pindah app Lovable ke VPS (tanpa kehilangan data)
-# a. Hentikan sementara traffic masuk (matikan webhook Twilio 5 menit)
-# b. Jalankan mirroring terakhir:
-sudo /usr/local/bin/husada-mirror.sh
-# c. Salin file Storage (media chat):
-#    supabase storage cp -r ss:///chat-media ./chat-media  →  upload ke storage VPS
-# d. Ganti environment app di Lovable menjadi endpoint VPS:
-#    VITE_SUPABASE_URL      = https://api.${host}
-#    VITE_SUPABASE_PUBLISHABLE_KEY = ANON_KEY dari .env VPS
-#    SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY = milik VPS
-# e. Arahkan webhook Twilio ke: https://api.${host}/functions/v1/twilio-webhook
-# f. Nyalakan kembali traffic, pantau /settings → Log Gateway
-# g. Setelah 7 hari stabil & backup aman → database cloud boleh dimatikan`,
+    cutover: `# 6) Cutover — pindah app ke VPS tanpa kehilangan data
+# a. Matikan sementara webhook Twilio (5 menit)
+# b. Mirroring terakhir: sudo /usr/local/bin/husada-mirror.sh && rclone sync supa:chat-media /var/lib/husada/chat-media
+# c. Ganti environment app di Lovable:
+#      VITE_SUPABASE_URL             = ${apiUrl}
+#      VITE_SUPABASE_PUBLISHABLE_KEY = ANON_KEY dari .env VPS
+#      SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY = milik VPS
+# d. Arahkan webhook Twilio ke: ${apiUrl}/functions/v1/twilio-webhook
+# e. Nyalakan traffic, pantau Developer Mode → Log Gateway
+# f. Setelah 7 hari stabil & backup jalan → database cloud boleh dimatikan`,
 
-    verify: `# 6) Verifikasi tidak ada data hilang (jalankan di VPS)
+    verify: `# 7) Verifikasi tidak ada data hilang — jalankan di VPS, bandingkan dengan tabel di atas
 psql "postgresql://${pgUser}@127.0.0.1:${pgPort}/${pgDb}" -c "
-SELECT 'contacts' t, count(*) FROM contacts
-UNION ALL SELECT 'conversations', count(*) FROM conversations
-UNION ALL SELECT 'messages', count(*) FROM messages
-UNION ALL SELECT 'audit_events', count(*) FROM audit_events;"
-# Bandingkan angkanya dengan hasil query yang sama di database cloud.`,
-  }), [host, pgUser, pgDb, pgPort]);
+${PUBLIC_TABLES.map((t, i) => `${i === 0 ? "SELECT" : "UNION ALL SELECT"} '${t}' AS tabel, count(*) FROM public.${t}`).join("\n")}
+UNION ALL SELECT 'auth.users', count(*) FROM auth.users
+UNION ALL SELECT 'storage.objects', count(*) FROM storage.objects
+ORDER BY 1;"`,
+  }), [host, pgUser, pgDb, pgPort, apiUrl]);
 
   return (
     <div className="space-y-4">
+      {/* ---- Mode sumber data ---- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Cloud className="size-5" /> Sumber Data Aktif</CardTitle>
+          <CardDescription>
+            Pilih dari mana aplikasi mengambil data. Perpindahan bersifat bertahap: mulai dari mirroring ganda,
+            baru matikan cloud setelah jumlah baris di VPS sama persis.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid md:grid-cols-3 gap-3">
+          {MODES.map((m) => {
+            const active = cfg.data_backend_mode === m.id;
+            return (
+              <button key={m.id} type="button" onClick={() => applyMode(m.id)}
+                className={`text-left rounded-xl border p-3 transition ${active ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "hover:bg-muted/50"}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  {m.id === "vps" ? <CloudOff className="size-4" /> : <Server className="size-4" />}
+                  <span className="text-sm font-medium">{m.label}</span>
+                  {active && <Badge className="ml-auto bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">Aktif</Badge>}
+                </div>
+                <p className="text-xs text-muted-foreground">{m.desc}</p>
+              </button>
+            );
+          })}
+          <div className="md:col-span-3 rounded-lg border p-3 text-xs text-muted-foreground bg-muted/30 flex gap-2">
+            <AlertTriangle className="size-4 shrink-0 text-amber-500" />
+            <span>
+              Mode ini menyimpan keputusan arsitektur dan mengunci langkah tutorial yang harus dijalankan.
+              Perpindahan endpoint sesungguhnya terjadi saat variabel <code>VITE_SUPABASE_URL</code> &amp; key diganti (Langkah 6c) —
+              data lama tidak terhapus, cloud hanya berhenti menerima traffic baru.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ---- Konfigurasi VPS ---- */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -244,8 +368,7 @@ UNION ALL SELECT 'audit_events', count(*) FROM audit_events;"
               : <Badge variant="outline">Nonaktif</Badge>}
           </CardTitle>
           <CardDescription>
-            Simpan detail VPS di sini. Perintah di bawah otomatis menyesuaikan isian ini, jadi tinggal salin-tempel di server.
-            Editing aplikasi tetap berjalan di Lovable — yang pindah hanya database & media.
+            Semua perintah di bawah otomatis menyesuaikan isian ini. Editing aplikasi tetap di Lovable — yang pindah hanya database &amp; media.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -278,6 +401,16 @@ UNION ALL SELECT 'audit_events', count(*) FROM audit_events;"
                     className="font-mono text-xs" />
                 </div>
                 <div className="space-y-1.5">
+                  <Label>API URL VPS (Kong/Nginx)</Label>
+                  <Input value={cfg.vps_api_url} onChange={(e) => setCfg({ ...cfg, vps_api_url: e.target.value })}
+                    placeholder="https://api.domain-anda.com" className="font-mono text-xs" />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label>ANON KEY VPS</Label>
+                  <Input value={cfg.vps_anon_key} onChange={(e) => setCfg({ ...cfg, vps_anon_key: e.target.value })}
+                    placeholder="eyJhbGciOi…" className="font-mono text-xs" />
+                </div>
+                <div className="space-y-1.5">
                   <Label>Status Mirroring</Label>
                   <div className="flex gap-2">
                     <Button type="button" variant={cfg.vps_mirror_enabled === "true" ? "default" : "outline"} size="sm"
@@ -289,7 +422,7 @@ UNION ALL SELECT 'audit_events', count(*) FROM audit_events;"
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={save} disabled={saving}>{saving ? "Menyimpan…" : "Simpan Konfigurasi"}</Button>
+                <Button onClick={() => save()} disabled={saving}>{saving ? "Menyimpan…" : "Simpan Konfigurasi"}</Button>
                 <Button variant="outline" onClick={() => {
                   setCfg({ ...cfg, vps_last_sync_at: new Date().toISOString() });
                   toast.info("Tandai waktu sinkron terakhir, lalu klik Simpan.");
@@ -307,34 +440,117 @@ UNION ALL SELECT 'audit_events', count(*) FROM audit_events;"
         </CardContent>
       </Card>
 
+      {/* ---- Inventaris tabel ---- */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Database className="size-5" /> Tutorial Migrasi &amp; Mirroring</CardTitle>
+          <CardTitle className="flex items-center gap-2"><ListChecks className="size-5" /> Daftar Data yang Harus Termirror</CardTitle>
           <CardDescription>
-            Urutan aman: mirroring dulu (data ganda di cloud + VPS), verifikasi jumlah baris, baru cutover.
-            Database cloud hanya dimatikan setelah VPS terbukti stabil, jadi tidak ada data yang hilang.
+            {PUBLIC_TABLES.length} tabel aplikasi + schema auth &amp; storage. Ambil jumlah baris cloud di sini,
+            lalu bandingkan dengan hasil query verifikasi (Langkah 7) di VPS.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <CodeBlock title="Langkah 1 — Siapkan Postgres di VPS" code={snippets.prepare} />
-          <CodeBlock title="Langkah 2 — Mirroring otomatis tiap jam (cron)" code={snippets.mirror} />
-          <CodeBlock title="Langkah 3 — Opsional: replikasi nyaris realtime" code={snippets.realtime} />
-          <CodeBlock title="Langkah 4 — Jalankan Auth/Realtime/Storage di VPS" code={snippets.selfhost} />
-          <CodeBlock title="Langkah 5 — Cutover ke VPS" code={snippets.cutover} />
-          <CodeBlock title="Langkah 6 — Verifikasi data lengkap" code={snippets.verify} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={countRows} disabled={counting}>
+              <RefreshCw className={`size-3.5 mr-1.5 ${counting ? "animate-spin" : ""}`} /> {counting ? "Menghitung…" : "Hitung Baris Cloud"}
+            </Button>
+            {!!Object.keys(counts).length && (
+              <>
+                <span className="text-xs text-muted-foreground">Total {totalRows.toLocaleString("id-ID")} baris</span>
+                <Button size="sm" variant="outline" onClick={() => {
+                  const txt = PUBLIC_TABLES.map((t) => `${t}\t${counts[t] ?? "-"}`).join("\n");
+                  navigator.clipboard.writeText(txt);
+                  toast.success("Daftar jumlah baris disalin");
+                }}><Copy className="size-3.5 mr-1.5" /> Salin</Button>
+              </>
+            )}
+          </div>
 
-          <div className="rounded-lg border p-3 text-xs space-y-1.5 bg-muted/30">
-            <p className="font-medium">Catatan penting</p>
-            <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
-              <li>Aplikasi Lovable hanya bicara lewat URL + API key, jadi setelah cutover semua editing di Lovable tetap jalan normal.</li>
-              <li>Storage (media chat) tidak ikut <code>pg_dump</code> — salin bucket <code>chat-media</code> secara terpisah di langkah 5c.</li>
-              <li>Wajib backup harian di VPS (<code>pg_dump</code> ke disk lain / S3) — cloud tidak lagi menyimpan cadangan setelah dimatikan.</li>
-              <li>Spesifikasi minimum nyaman: 2 vCPU, 4 GB RAM, 50 GB NVMe, plus swap 2 GB.</li>
-              <li>Simpan <code>JWT_SECRET</code>, <code>ANON_KEY</code>, dan <code>SERVICE_ROLE_KEY</code> VPS di tempat aman — kehilangan JWT_SECRET membuat semua sesi login rusak.</li>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+            {PUBLIC_TABLES.map((t) => (
+              <div key={t} className="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs">
+                <span className="font-mono truncate">{t}</span>
+                <span className="text-muted-foreground tabular-nums shrink-0">
+                  {counts[t] === undefined ? "—" : counts[t] === null ? "n/a" : counts[t]!.toLocaleString("id-ID")}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-lg border p-3 space-y-1.5 bg-muted/30">
+            <p className="text-xs font-medium">Selain tabel di atas, ikut dipindahkan:</p>
+            <ul className="text-xs text-muted-foreground space-y-1">
+              {EXTRA_OBJECTS.map((o) => (
+                <li key={o.label} className="flex gap-2">
+                  <span className="text-primary">•</span>
+                  <span><span className="text-foreground">{o.label}</span> — {o.detail}</span>
+                </li>
+              ))}
             </ul>
           </div>
         </CardContent>
       </Card>
+
+      {/* ---- Tutorial ---- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Database className="size-5" /> Tutorial Migrasi &amp; Mirroring</CardTitle>
+          <CardDescription>
+            Urutan aman: siapkan Postgres → mirroring database + media → verifikasi jumlah baris → cutover.
+            Cloud hanya dimatikan setelah VPS terbukti stabil, jadi tidak ada data yang hilang.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <CodeBlock title="Langkah 1 — Siapkan Postgres + role Supabase" code={snippets.prepare} />
+          <CodeBlock title="Langkah 2 — Mirroring seluruh database tiap jam" code={snippets.mirror} />
+          <CodeBlock title="Langkah 3 — Mirroring file media (chat-media)" code={snippets.media} />
+          <CodeBlock title="Langkah 4 — Opsional: replikasi nyaris realtime" code={snippets.realtime} />
+          <CodeBlock title="Langkah 5 — Jalankan Auth/Realtime/Storage di VPS" code={snippets.selfhost} />
+          <CodeBlock title="Langkah 6 — Cutover ke VPS" code={snippets.cutover} />
+          <CodeBlock title="Langkah 7 — Verifikasi semua tabel lengkap" code={snippets.verify} />
+
+          <div className="rounded-lg border p-3 text-xs space-y-1.5 bg-muted/30">
+            <p className="font-medium">Data &amp; kredensial yang perlu disiapkan sebelum mulai</p>
+            <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
+              <li>Connection string Postgres cloud (host, user, password, port 5432).</li>
+              <li>Storage S3 access key &amp; secret untuk menyalin bucket <code>chat-media</code>.</li>
+              <li>Semua secret Twilio: <code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code>, <code>TWILIO_API_KEY_SID</code>, <code>TWILIO_API_KEY_SECRET</code>, <code>TWILIO_WHATSAPP_NUMBER</code>, <code>TWILIO_MESSAGING_SERVICE_SID</code>.</li>
+              <li><code>JWT_SECRET</code>, <code>ANON_KEY</code>, <code>SERVICE_ROLE_KEY</code> baru untuk VPS — simpan aman, hilangnya JWT_SECRET merusak semua sesi login.</li>
+              <li>Domain/subdomain + sertifikat SSL untuk API VPS ({apiUrl}).</li>
+              <li>Spesifikasi minimum nyaman: 2 vCPU, 4 GB RAM, 50 GB NVMe, swap 2 GB.</li>
+              <li>Backup harian wajib di VPS — cloud tidak lagi menyimpan cadangan setelah dimatikan.</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={!!confirmMode} onOpenChange={(o) => { if (!o) setConfirmMode(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ubah sumber data ke "{MODES.find((m) => m.id === confirmMode)?.label}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmMode === "vps"
+                ? "Pastikan mirroring sudah berjalan dan jumlah baris seluruh tabel di VPS sama dengan cloud. Setelah beralih, traffic baru hanya tersimpan di VPS."
+                : confirmMode === "cloud"
+                  ? "Aplikasi kembali sepenuhnya memakai Lovable Cloud. Data yang sudah masuk ke VPS tidak terhapus."
+                  : "Cloud tetap jadi sumber utama, VPS menerima salinan penuh. Ini mode paling aman untuk masa transisi."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="flex items-start gap-2 text-xs">
+            <Checkbox checked={ack} onCheckedChange={(v) => setAck(!!v)} className="mt-0.5" />
+            <span>Saya sudah memverifikasi jumlah baris seluruh tabel dan memiliki backup terbaru.</span>
+          </label>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction disabled={!ack} onClick={() => {
+              const id = confirmMode!;
+              setCfg((p) => ({ ...p, data_backend_mode: id }));
+              save({ data_backend_mode: id });
+              setConfirmMode(null);
+            }}>Terapkan</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
