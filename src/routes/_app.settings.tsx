@@ -19,6 +19,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { WorkflowBuilderTab } from "@/components/workflow-builder";
 import { FRWeeklySchedule } from "@/components/fr-weekly-schedule";
+import { DeveloperModeGate, VpsMirrorPanel } from "@/components/developer-mode";
 
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({ meta: [{ title: "Settings — Husada CRM" }] }),
@@ -30,7 +31,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 function SettingsPage() {
   const [tab, setTab] = useState("gateway");
   const tabs = [
-    { v: "gateway", label: "WhatsApp Gateway" },
+    { v: "gateway", label: "Developer Mode" },
     { v: "stages", label: "Stages Pipeline" },
     { v: "flow", label: "Bot Workflow" },
     { v: "categories", label: "Kategori Pertanyaan" },
@@ -59,7 +60,12 @@ function SettingsPage() {
       </div>
 
       <div>
-        {tab === "gateway" && <FonnteTab />}
+        {tab === "gateway" && (
+          <DeveloperModeGate>
+            <FonnteTab />
+            <VpsMirrorPanel />
+          </DeveloperModeGate>
+        )}
         {tab === "stages" && <WorkflowTab />}
         {tab === "flow" && <WorkflowBuilderTab />}
         {tab === "categories" && <CategoriesTab />}
