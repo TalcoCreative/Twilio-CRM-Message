@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw, Cloud, CloudOff, ListChecks, AlertTriangle } from "lucide-react";
+import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw, Cloud, CloudOff, ListChecks, AlertTriangle, FileSpreadsheet, Download } from "lucide-react";
 
 const DEV_PIN = "250321";
 const SESSION_KEY = "husada_dev_mode_ok";
