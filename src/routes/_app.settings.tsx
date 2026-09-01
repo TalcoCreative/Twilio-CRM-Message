@@ -63,6 +63,7 @@ function SettingsPage() {
         {tab === "gateway" && (
           <DeveloperModeGate>
             <FonnteTab />
+            <InboxExportPanel />
             <VpsMirrorPanel />
           </DeveloperModeGate>
         )}

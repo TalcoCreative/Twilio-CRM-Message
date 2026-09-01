@@ -555,3 +555,186 @@ ORDER BY 1;"`,
     </div>
   );
 }
+
+const WIB = "Asia/Jakarta";
+
+async function fetchAllRows(buildQuery: () => any, pageSize = 1000): Promise<any[]> {
+  const all: any[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+  }
+  return all;
+}
+
+function wibDate(iso: string | null | undefined) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("id-ID", { timeZone: WIB, day: "2-digit", month: "2-digit", year: "numeric" });
+}
+function wibTime(iso: string | null | undefined) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("id-ID", { timeZone: WIB, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+/** Export seluruh percakapan + isi chat inbox ke XLSX untuk review script. */
+export function InboxExportPanel() {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [progress, setProgress] = useState("");
+
+  async function exportInbox() {
+    setExporting(true);
+    try {
+      setProgress("Mengambil profil, stage, produk…");
+      const [profRes, stageRes, prodRes] = await Promise.all([
+        supabase.from("profiles").select("id, full_name, email"),
+        supabase.from("stages").select("id, name").order("order_index"),
+        supabase.from("products").select("id, name").eq("is_active", true),
+      ]);
+      const profMap: Record<string, string> = {};
+      (profRes.data || []).forEach((p: any) => { profMap[p.id] = p.full_name || p.email || p.id; });
+      const stageMap: Record<string, string> = {};
+      (stageRes.data || []).forEach((s: any) => { stageMap[s.id] = s.name; });
+      const prodMap: Record<string, string> = {};
+      (prodRes.data || []).forEach((p: any) => { prodMap[p.id] = p.name; });
+
+      setProgress("Mengambil seluruh kontak…");
+      const contacts = await fetchAllRows(() =>
+        supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, interested_product_id, source, created_at, need_category, domicile"));
+      const contactMap: Record<string, any> = {};
+      contacts.forEach((c) => { contactMap[c.id] = c; });
+
+      setProgress("Mengambil seluruh percakapan…");
+      const conversations = await fetchAllRows(() =>
+        supabase.from("conversations").select("*").order("created_at", { ascending: true }));
+      const convMap: Record<string, any> = {};
+      conversations.forEach((c) => { convMap[c.id] = c; });
+
+      setProgress("Mengambil seluruh pesan (ini bisa agak lama)…");
+      let msgQ = () => {
+        let q = supabase.from("messages").select("*").order("sent_at", { ascending: true });
+        if (from) q = q.gte("sent_at", `${from}T00:00:00+07:00`);
+        if (to) q = q.lte("sent_at", `${to}T23:59:59.999+07:00`);
+        return q;
+      };
+      const messages = await fetchAllRows(msgQ);
+
+      setProgress("Menyusun file Excel…");
+
+      // Sheet 1 — Transkrip chat: 1 baris = 1 pesan
+      const chatRows = messages.map((m: any) => {
+        const conv = convMap[m.conversation_id] || {};
+        const contact = contactMap[conv.contact_id] || {};
+        const pengirim = m.direction === "INBOUND"
+          ? (contact.full_name || contact.whatsapp_number || "Kontak")
+          : (m.sent_by_id ? (profMap[m.sent_by_id] || "Sistem") : "Bot/Sistem");
+        return {
+          "Tanggal (WIB)": wibDate(m.sent_at),
+          "Jam (WIB)": wibTime(m.sent_at),
+          "Nama Kontak": contact.full_name || "",
+          "No. WhatsApp": contact.whatsapp_number || "",
+          "Arah": m.direction === "INBOUND" ? "Masuk" : "Keluar",
+          "Pengirim": pengirim,
+          "Tipe": m.type,
+          "Isi Pesan": m.type === "INTERNAL_NOTE" ? `[CATATAN] ${m.content}` : m.content,
+          "Media URL": m.media_url || "",
+          "Status": m.status,
+          "Stage Akhir": stageMap[contact.stage_id] || "",
+          "Produk": prodMap[contact.interested_product_id] || "",
+          "ID Percakapan": m.conversation_id,
+        };
+      });
+
+      // Sheet 2 — Ringkasan per percakapan (hasil akhir)
+      const convRows = conversations
+        .filter((c: any) => messages.some((m: any) => m.conversation_id === c.id))
+        .map((c: any) => {
+          const contact = contactMap[c.contact_id] || {};
+          const convMsgs = messages.filter((m: any) => m.conversation_id === c.id);
+          const inbound = convMsgs.filter((m: any) => m.direction === "INBOUND").length;
+          return {
+            "Nama Kontak": contact.full_name || "",
+            "No. WhatsApp": contact.whatsapp_number || "",
+            "Sumber": contact.source || "",
+            "Kategori Kebutuhan": contact.need_category || "",
+            "Domisili": contact.domicile || "",
+            "Stage Akhir": stageMap[contact.stage_id] || "",
+            "Produk": prodMap[contact.interested_product_id] || "",
+            "Status Percakapan": c.status,
+            "Agent Terakhir": c.assigned_agent_id ? (profMap[c.assigned_agent_id] || "") : "",
+            "Total Pesan": convMsgs.length,
+            "Pesan Masuk": inbound,
+            "Pesan Keluar": convMsgs.length - inbound,
+            "Pesan Pertama (WIB)": convMsgs.length ? `${wibDate(convMsgs[0].sent_at)} ${wibTime(convMsgs[0].sent_at)}` : "",
+            "Pesan Terakhir (WIB)": convMsgs.length ? `${wibDate(convMsgs[convMsgs.length - 1].sent_at)} ${wibTime(convMsgs[convMsgs.length - 1].sent_at)}` : "",
+            "Respon Pertama (detik)": convMsgs.find((m: any) => m.response_seconds != null)?.response_seconds ?? "",
+          };
+        });
+
+      // Sheet 3 — Kontak/leads
+      const contactRows = contacts.map((c: any) => ({
+        "Nama": c.full_name || "",
+        "No. WhatsApp": c.whatsapp_number,
+        "Sumber": c.source || "",
+        "Kategori Kebutuhan": c.need_category || "",
+        "Domisili": c.domicile || "",
+        "Stage": stageMap[c.stage_id] || "",
+        "Produk": prodMap[c.interested_product_id] || "",
+        "Dibuat (WIB)": `${wibDate(c.created_at)} ${wibTime(c.created_at)}`,
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws1 = XLSX.utils.json_to_sheet(chatRows);
+      ws1["!cols"] = [{ wch: 11 }, { wch: 9 }, { wch: 22 }, { wch: 16 }, { wch: 7 }, { wch: 18 }, { wch: 10 }, { wch: 60 }, { wch: 30 }, { wch: 9 }, { wch: 14 }, { wch: 18 }, { wch: 30 }];
+      XLSX.utils.book_append_sheet(wb, ws1, "Transkrip Chat");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(convRows), "Ringkasan Percakapan");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contactRows), "Kontak");
+
+      const stamp = new Date().toLocaleDateString("id-ID", { timeZone: WIB }).replace(/\//g, "-");
+      const range = from || to ? `_${from || "awal"}_sd_${to || "kini"}` : "";
+      XLSX.writeFile(wb, `inbox-export-${stamp}${range}.xlsx`);
+      toast.success(`Export selesai: ${messages.length.toLocaleString("id-ID")} pesan, ${convRows.length.toLocaleString("id-ID")} percakapan`);
+    } catch (e: any) {
+      toast.error("Export gagal: " + (e?.message || e));
+    } finally {
+      setExporting(false);
+      setProgress("");
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><FileSpreadsheet className="size-5" /> Export Inbox (XLSX)</CardTitle>
+        <CardDescription>
+          Unduh seluruh isi inbox — transkrip chat per pesan, ringkasan per percakapan (stage &amp; produk akhir),
+          dan daftar kontak. Cocok untuk review script dan audit hasil akhir.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid sm:grid-cols-2 gap-3 max-w-md">
+          <div className="space-y-1.5">
+            <Label>Dari Tanggal (opsional)</Label>
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Sampai Tanggal (opsional)</Label>
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Kosongkan tanggal untuk export semua. Batas tanggal berlaku ke transkrip pesan (WIB).
+        </p>
+        <Button onClick={exportInbox} disabled={exporting}>
+          {exporting ? <RefreshCw className="size-4 mr-1.5 animate-spin" /> : <Download className="size-4 mr-1.5" />}
+          {exporting ? (progress || "Mengekspor…") : "Export Inbox ke XLSX"}
+        </Button>
+        {exporting && progress && <p className="text-xs text-muted-foreground">{progress}</p>}
+      </CardContent>
+    </Card>
+  );
+}
