@@ -243,6 +243,7 @@ export type Database = {
           initial_question: string | null
           interested_product_id: string | null
           last_interaction_at: string | null
+          lead_temperature: string | null
           need_category: string | null
           notes: string | null
           source: string
@@ -270,6 +271,7 @@ export type Database = {
           initial_question?: string | null
           interested_product_id?: string | null
           last_interaction_at?: string | null
+          lead_temperature?: string | null
           need_category?: string | null
           notes?: string | null
           source?: string
@@ -297,6 +299,7 @@ export type Database = {
           initial_question?: string | null
           interested_product_id?: string | null
           last_interaction_at?: string | null
+          lead_temperature?: string | null
           need_category?: string | null
           notes?: string | null
           source?: string
