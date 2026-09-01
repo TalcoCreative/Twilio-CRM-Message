@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
+import { LEAD_TEMPERATURES, tempColor, tempLabel, TEMP_NONE_LABEL } from "@/lib/lead-temperature";
 
 type Stage = { id: string; name: string; color: string; is_default?: boolean };
 type Product = { id: string; name: string };
@@ -32,10 +33,12 @@ type Contact = {
   source: string | null; notes: string | null; document_url: string | null;
   chief_complaint: string | null; assigned_agent_id?: string | null;
   content_code_id?: string | null;
+  lead_temperature?: string | null;
   stages?: { name: string; color: string };
 };
 
-type SortKey = "full_name" | "whatsapp_number" | "product" | "stage" | "source" | "estimated_revenue" | "created_at";
+type SortKey = "full_name" | "whatsapp_number" | "product" | "stage" | "temperature" | "source" | "estimated_revenue" | "created_at";
+const TEMP_ORDER: Record<string, number> = { HOT: 0, WARM: 1, COLD: 2 };
 type SortDir = "asc" | "desc";
 
 export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
@@ -47,6 +50,7 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   const [contentCodes, setContentCodes] = useState<ContentCode[]>([]);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
+  const [tempFilter, setTempFilter] = useState("all");
   const [openNew, setOpenNew] = useState(false);
   const [selected, setSelected] = useState<Contact | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
@@ -161,7 +165,9 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
     const q = search.toLowerCase();
     const matchQ = !q || c.full_name?.toLowerCase().includes(q) || c.whatsapp_number.includes(q);
     const matchS = stageFilter === "all" || c.stage_id === stageFilter;
-    return matchQ && matchS;
+    const matchT = tempFilter === "all"
+      || (tempFilter === "none" ? !c.lead_temperature : c.lead_temperature === tempFilter);
+    return matchQ && matchS && matchT;
   }).sort((a, b) => {
     const dir = sortDir === "asc" ? 1 : -1;
     const cmp = (x: any, y: any) => {
@@ -176,6 +182,7 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
       case "whatsapp_number": return cmp(a.whatsapp_number, b.whatsapp_number);
       case "product": return cmp(productNameById(a.interested_product_id), productNameById(b.interested_product_id));
       case "stage": return cmp(a.stage_id ? stageOrder[a.stage_id] ?? 999 : 999, b.stage_id ? stageOrder[b.stage_id] ?? 999 : 999);
+      case "temperature": return cmp(TEMP_ORDER[a.lead_temperature || ""] ?? 9, TEMP_ORDER[b.lead_temperature || ""] ?? 9);
       case "source": return cmp(a.source, b.source);
       case "estimated_revenue": return cmp(Number(a.estimated_revenue || 0), Number(b.estimated_revenue || 0));
       case "created_at": return cmp(new Date(a.created_at).getTime(), new Date(b.created_at).getTime());
@@ -199,10 +206,11 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
   }
 
   function exportCsv() {
-    const rows = [["No WhatsApp", "Nama", "Domisili", "Stage", "Produk", "Estimated Revenue", "Source", "Notes", "Document URL", "Dibuat"]];
+    const rows = [["No WhatsApp", "Nama", "Domisili", "Stage", "Produk", "Prioritas", "Estimated Revenue", "Source", "Notes", "Document URL", "Dibuat"]];
     filtered.forEach((c) => rows.push([
       c.whatsapp_number, c.full_name || "", c.domicile || "",
       c.stages?.name || "", products.find(p => p.id === c.interested_product_id)?.name || "",
+      c.lead_temperature ? tempLabel(c.lead_temperature) : "",
       String(c.estimated_revenue || 0), c.source || "", c.notes || "",
       c.document_url || "", new Date(c.created_at).toLocaleString("id-ID"),
     ]));
@@ -341,6 +349,29 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
             {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={tempFilter} onValueChange={setTempFilter}>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Filter prioritas" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua prioritas</SelectItem>
+            {LEAD_TEMPERATURES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+            <SelectItem value="none">{TEMP_NONE_LABEL}</SelectItem>
+          </SelectContent>
+        </Select>
+      </Card>
+
+      <Card className="p-3 flex flex-wrap gap-2 glow-soft">
+        {LEAD_TEMPERATURES.map((t) => (
+          <div key={t.value} className="flex-1 min-w-[120px] rounded-lg border p-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="size-2 rounded-full" style={{ background: t.color }} /> {t.label}
+            </div>
+            <div className="text-xl font-bold tabular-nums">{filtered.filter((c) => c.lead_temperature === t.value).length}</div>
+          </div>
+        ))}
+        <div className="flex-1 min-w-[120px] rounded-lg border p-2">
+          <div className="text-xs text-muted-foreground">{TEMP_NONE_LABEL}</div>
+          <div className="text-xl font-bold tabular-nums">{filtered.filter((c) => !c.lead_temperature).length}</div>
+        </div>
       </Card>
 
       <Card className="overflow-hidden glow-soft">
@@ -358,6 +389,7 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
                 <SortableTh label="No WhatsApp" k="whatsapp_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortableTh label="Produk" k="product" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortableTh label="Stage" k="stage" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="Prioritas" k="temperature" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortableTh label="Est. Revenue" k="estimated_revenue" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
                 <SortableTh label="Source" k="source" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               </tr>
@@ -374,12 +406,17 @@ export function LeadsView({ mineOnly }: { mineOnly: boolean }) {
                   <td className="p-3 cursor-pointer" onClick={() => setSelected(c)}>
                     {c.stages && <Badge style={{ background: c.stages.color, color: "white" }}>{c.stages.name}</Badge>}
                   </td>
+                  <td className="p-3 cursor-pointer" onClick={() => setSelected(c)}>
+                    {c.lead_temperature ? (
+                      <Badge style={{ background: tempColor(c.lead_temperature), color: "white" }}>{tempLabel(c.lead_temperature)}</Badge>
+                    ) : <span className="text-xs text-muted-foreground">—</span>}
+                  </td>
                   <td className="p-3 text-right cursor-pointer" onClick={() => setSelected(c)}>Rp {Number(c.estimated_revenue || 0).toLocaleString("id-ID")}</td>
                   <td className="p-3 text-xs text-muted-foreground cursor-pointer" onClick={() => setSelected(c)}>{c.source || "—"}</td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">Belum ada lead.</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Belum ada lead.</td></tr>
               )}
             </tbody>
           </table>
@@ -492,6 +529,7 @@ function LeadDetailDialog({ contact, stages, products, agents, contentCodes, onC
       domicile: form.domicile,
       stage_id: form.stage_id,
       interested_product_id: form.interested_product_id || null,
+      lead_temperature: form.lead_temperature || null,
       estimated_revenue: Number(form.estimated_revenue) || 0,
       source: finalSource,
       content_code_id: isAds ? (form.content_code_id || null) : null,
@@ -584,6 +622,15 @@ function LeadDetailDialog({ contact, stages, products, agents, contentCodes, onC
               <SelectContent>
                 <SelectItem value="none">— Tidak ada —</SelectItem>
                 {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5"><Label>Prioritas Lead</Label>
+            <Select value={form.lead_temperature || "none"} onValueChange={(v) => setForm({ ...form, lead_temperature: v === "none" ? null : v })}>
+              <SelectTrigger><SelectValue placeholder="Pilih prioritas" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">{TEMP_NONE_LABEL}</SelectItem>
+                {LEAD_TEMPERATURES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label} — {t.hint}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
