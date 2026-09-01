@@ -19,7 +19,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { WorkflowBuilderTab } from "@/components/workflow-builder";
 import { FRWeeklySchedule } from "@/components/fr-weekly-schedule";
-import { DeveloperModeGate, VpsMirrorPanel } from "@/components/developer-mode";
+import { DeveloperModeGate, VpsMirrorPanel, InboxExportPanel } from "@/components/developer-mode";
 
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({ meta: [{ title: "Settings — Husada CRM" }] }),
