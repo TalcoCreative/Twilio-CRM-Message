@@ -284,6 +284,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const [filterUnassigned, setFilterUnassigned] = useState(false);
   const [filterStageId, setFilterStageId] = useState<string>("__all__");
   const [filterAgentId, setFilterAgentId] = useState<string>("__all__");
+  const [filterTemp, setFilterTemp] = useState<string>("__all__");
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -298,6 +299,9 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     if (filterAgentId !== "__all__") {
       list = list.filter((c) => (c.assigned_agent_id || "__none__") === filterAgentId);
     }
+    if (filterTemp !== "__all__") {
+      list = list.filter((c) => (c.contact?.lead_temperature || "__none__") === filterTemp);
+    }
     const ts = (c: Conversation) => c.last_message_at ? new Date(c.last_message_at).getTime() : 0;
     const nm = (c: Conversation) => (c.contact?.full_name || c.contact?.whatsapp_number || "").toLowerCase();
     list = [...list].sort((a, b) => {
@@ -310,7 +314,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       }
     });
     return list;
-  }, [conversations, search, filterUnread, filterUnassigned, filterStageId, filterAgentId, sortBy]);
+  }, [conversations, search, filterUnread, filterUnassigned, filterStageId, filterAgentId, filterTemp, sortBy]);
 
   // SLA badge color based on minutes since last inbound when unread
   function slaTone(c: Conversation): "ok" | "warn" | "danger" | null {
@@ -780,8 +784,22 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.full_name || a.email}</SelectItem>)}
                 </SelectContent>
               </Select>
-              {(filterStageId !== "__all__" || filterAgentId !== "__all__") && (
-                <button onClick={() => { setFilterStageId("__all__"); setFilterAgentId("__all__"); }}
+              <Select value={filterTemp} onValueChange={setFilterTemp}>
+                <SelectTrigger className="h-7 text-[11px] flex-1 min-w-[120px]"><SelectValue placeholder="Prioritas" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Semua prioritas</SelectItem>
+                  {LEAD_TEMPERATURES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      <span className="inline-flex items-center gap-2">
+                        <span className="size-2 rounded-full" style={{ background: t.color }} /> {t.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="__none__">Belum diklasifikasi</SelectItem>
+                </SelectContent>
+              </Select>
+              {(filterStageId !== "__all__" || filterAgentId !== "__all__" || filterTemp !== "__all__") && (
+                <button onClick={() => { setFilterStageId("__all__"); setFilterAgentId("__all__"); setFilterTemp("__all__"); }}
                   className="text-[10px] px-2 py-1 rounded-md border hover:bg-accent">Reset</button>
               )}
             </div>
@@ -801,6 +819,11 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
               const stage = stages.find((s) => s.id === c.contact?.stage_id);
               const sla = slaTone(c);
               const slaCls = sla === "ok" ? "border-l-emerald-500" : sla === "warn" ? "border-l-amber-500" : sla === "danger" ? "border-l-rose-500" : "border-l-transparent";
+              const temp = c.contact?.lead_temperature || null;
+              // Warna bar list mengikuti prioritas lead, template baris tetap sama.
+              const tempStyle = temp
+                ? { borderLeftColor: tempColor(temp), backgroundColor: tempColor(temp) + "0F" }
+                : undefined;
               return (
                 <button key={c.id}
                   onClick={() => { if (longPressFired.current) { longPressFired.current = false; return; } setActiveId(c.id); }}
@@ -810,8 +833,9 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   onPointerCancel={cancelLongPress}
                   onContextMenu={(e) => { e.preventDefault(); markUnread(c.id); }}
                   className={cn("w-full text-left px-4 py-3 border-b border-l-4 hover:bg-accent/60 flex flex-col gap-1 transition-colors select-none touch-none",
-                    slaCls,
-                    activeId === c.id && "bg-accent")}>
+                    !temp && slaCls,
+                    activeId === c.id && "bg-accent")}
+                  style={activeId === c.id ? undefined : tempStyle}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium text-sm truncate">
                       {c.contact?.full_name || "Tanpa nama"}
@@ -835,6 +859,12 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   <div className="text-[11px] text-muted-foreground">{c.contact?.whatsapp_number}</div>
                   <div className="text-xs text-muted-foreground truncate">{c.last_message_preview || "—"}</div>
                   <div className="flex items-center gap-1.5 flex-wrap">
+                    {c.contact?.lead_temperature && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1"
+                        style={{ backgroundColor: tempColor(c.contact.lead_temperature) + "22", color: tempColor(c.contact.lead_temperature) }}>
+                        <Flame className="size-2.5" /> {tempLabel(c.contact.lead_temperature)}
+                      </span>
+                    )}
                     {stage && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                         style={{ backgroundColor: (stage.color || "#888") + "20", color: stage.color || "inherit" }}>
