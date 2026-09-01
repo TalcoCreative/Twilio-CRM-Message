@@ -18,6 +18,7 @@ import {
 
 import { Plus, Trash2, Megaphone, Trophy, Copy, ExternalLink, Sparkles, CalendarRange, Eye, Users, X, ShieldCheck, Download } from "lucide-react";
 import { toast } from "sonner";
+import { LEAD_TEMPERATURES, TEMP_NONE_COLOR, TEMP_NONE_LABEL, tempDistribution } from "@/lib/lead-temperature";
 import * as XLSX from "xlsx";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
@@ -39,6 +40,7 @@ type LeadRow = {
   id: string; full_name: string | null; whatsapp_number: string;
   content_code_id: string | null; source: string | null;
   interested_product_id: string | null; created_at: string;
+  lead_temperature?: string | null;
 };
 type Product = { id: string; name: string };
 
@@ -84,7 +86,7 @@ function AdsContentPage() {
       fetchAllRows((f, t) =>
         supabase
           .from("contacts")
-          .select("id, full_name, whatsapp_number, content_code_id, source, interested_product_id, created_at")
+          .select("id, full_name, whatsapp_number, content_code_id, source, interested_product_id, created_at, lead_temperature")
           .order("created_at", { ascending: false })
           .range(f, t),
       ),
@@ -284,6 +286,22 @@ function AdsContentPage() {
       value: count,
     })).sort((a, b) => b.value - a.value);
   }, [filteredLeads, products]);
+
+  // Sebaran prioritas lead (Hot/Warm/Cold) untuk rentang & per kode konten
+  const tempDist = useMemo(() => tempDistribution(filteredLeads), [filteredLeads]);
+  const tempByCode = useMemo(() => {
+    const map: Record<string, any> = {};
+    filteredLeads.forEach((l) => {
+      if (!l.content_code_id) return;
+      const c = codes.find((x) => x.id === l.content_code_id);
+      const name = c ? c.code : "—";
+      map[name] = map[name] || { name, HOT: 0, WARM: 0, COLD: 0, NONE: 0, total: 0 };
+      const k = ["HOT", "WARM", "COLD"].includes(l.lead_temperature || "") ? (l.lead_temperature as string) : "NONE";
+      map[name][k]++;
+      map[name].total++;
+    });
+    return Object.values(map).sort((a: any, b: any) => b.total - a.total);
+  }, [filteredLeads, codes]);
 
   function openEdit(c: ContentCode) {
     setEditing(c);
@@ -892,6 +910,41 @@ function AdsContentPage() {
               <Area type="monotone" dataKey="organik" stroke="#0ea5e9" fill="url(#gOrg)" name="Organik" />
             </AreaChart>
           </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Prioritas Lead */}
+      <Card className="glow-soft">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Prioritas Lead (Hot / Warm / Cold)</CardTitle>
+          <p className="text-xs text-muted-foreground">Sesuai penilaian agent di inbox, mengikuti filter tanggal di atas.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {tempDist.map((t) => (
+              <div key={t.key} className="rounded-lg border p-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="size-2 rounded-full" style={{ background: t.color }} /> {t.name}
+                </div>
+                <div className="text-xl font-bold tabular-nums">{t.count}</div>
+              </div>
+            ))}
+          </div>
+          {tempByCode.length > 0 && (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={tempByCode.slice(0, 12) as any}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="name" style={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
+                <YAxis allowDecimals={false} style={{ fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12, color: "hsl(var(--foreground))" }} />
+                <Legend />
+                {LEAD_TEMPERATURES.map((t) => (
+                  <Bar key={t.value} dataKey={t.value} stackId="t" name={t.label} fill={t.color} />
+                ))}
+                <Bar dataKey="NONE" stackId="t" name={TEMP_NONE_LABEL} fill={TEMP_NONE_COLOR} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </CardContent>
       </Card>
 

@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Send, Search, Loader2, User as UserIcon, Tag, Zap, FileText, MoreVertical, StickyNote, MessageSquare, Trash2, Package, Smartphone, MailOpen, Paperclip, Image as ImageIcon, Film, Mic, StopCircle, Sticker, File as FileIcon, Camera, AlertTriangle } from "lucide-react";
+import { Send, Search, Loader2, User as UserIcon, Tag, Zap, FileText, MoreVertical, StickyNote, MessageSquare, Trash2, Package, Smartphone, MailOpen, Paperclip, Image as ImageIcon, Film, Mic, StopCircle, Sticker, File as FileIcon, Camera, AlertTriangle, Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -15,6 +15,7 @@ import { id as idLocale } from "date-fns/locale";
 import { useAuth } from "@/hooks/use-auth";
 import { useRole } from "@/hooks/use-role";
 import { getCached, setCached } from "@/lib/data-cache";
+import { LEAD_TEMPERATURES, tempColor, tempLabel } from "@/lib/lead-temperature";
 
 export const Route = createFileRoute("/_app/inbox")({
   head: () => ({ meta: [{ title: "Inbox — Husada CRM" }] }),
@@ -28,6 +29,7 @@ export type Contact = {
   id: string; full_name: string | null; whatsapp_number: string;
   stage_id: string | null; interested_product_id: string | null;
   chief_complaint: string | null; domicile: string | null;
+  lead_temperature?: string | null;
 };
 export type Conversation = {
   id: string; contact_id: string; status: string;
@@ -93,7 +95,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     while (true) {
       let q = supabase
         .from("conversations")
-        .select("*, contact:contacts(id, full_name, whatsapp_number, stage_id, interested_product_id, chief_complaint, domicile)")
+        .select("*, contact:contacts(id, full_name, whatsapp_number, stage_id, interested_product_id, chief_complaint, domicile, lead_temperature)")
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .range(from, from + pageSize - 1);
       if (mineOnly && user) q = q.eq("assigned_agent_id", user.id);
@@ -650,6 +652,21 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     loadConversations();
   }
 
+  async function changeTemperature(v: string | null) {
+    if (!active?.contact_id) return;
+    const prev = active.contact?.lead_temperature || null;
+    if (prev === v) return;
+    const { error } = await supabase.from("contacts").update({ lead_temperature: v } as any).eq("id", active.contact_id);
+    if (error) return toast.error(error.message);
+    await logAction("change_lead_temperature", {
+      contact_id: active.contact_id,
+      contact_name: active.contact?.full_name, whatsapp: active.contact?.whatsapp_number,
+      from_temperature: prev, to_temperature: v,
+    });
+    toast.success(`Prioritas lead: ${tempLabel(v)}`);
+    loadConversations();
+  }
+
   async function saveName() {
     if (!active?.contact_id) { setEditingName(false); return; }
     const newName = nameDraft.trim();
@@ -881,6 +898,11 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3">
                       <span>{active.contact?.whatsapp_number}</span>
                       {activeProductName && <span>· {activeProductName}</span>}
+                      {active.contact?.lead_temperature && (
+                        <span className="inline-flex items-center gap-1 font-medium" style={{ color: tempColor(active.contact.lead_temperature) }}>
+                          · {tempLabel(active.contact.lead_temperature)}
+                        </span>
+                      )}
                     </div>
                     {/* Keluhan + extras: desktop only */}
                     <div className="hidden md:block">
@@ -903,6 +925,26 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue placeholder="Stage" /></SelectTrigger>
                         <SelectContent>
                           {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Flame className="size-3.5 text-muted-foreground" />
+                      <Select value={active.contact?.lead_temperature || "none"}
+                        onValueChange={(v) => changeTemperature(v === "none" ? null : v)}>
+                        <SelectTrigger className="h-8 w-[130px] text-xs">
+                          <SelectValue placeholder="Prioritas" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Belum diklasifikasi</SelectItem>
+                          {LEAD_TEMPERATURES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              <span className="inline-flex items-center gap-2">
+                                <span className="size-2 rounded-full" style={{ background: t.color }} />
+                                {t.label}
+                              </span>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -981,6 +1023,21 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                           <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Pilih stage" /></SelectTrigger>
                           <SelectContent>
                             {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                          <Flame className="size-3" /> Prioritas lead
+                        </div>
+                        <Select value={active.contact?.lead_temperature || "none"}
+                          onValueChange={(v) => changeTemperature(v === "none" ? null : v)}>
+                          <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Pilih prioritas" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Belum diklasifikasi</SelectItem>
+                            {LEAD_TEMPERATURES.map((t) => (
+                              <SelectItem key={t.value} value={t.value}>{t.label} — {t.hint}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
