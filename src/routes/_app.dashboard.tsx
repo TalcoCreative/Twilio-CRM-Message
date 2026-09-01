@@ -9,6 +9,7 @@ import {
   Zap, Timer, MessageCircle, AlertTriangle, Trophy, ArrowRightLeft, CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { LEAD_TEMPERATURES, TEMP_NONE_COLOR, TEMP_NONE_LABEL, tempDistribution } from "@/lib/lead-temperature";
 import { useRole } from "@/hooks/use-role";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -323,7 +324,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       const startDate = localDateKey(new Date(startISO));
       const endDate = localDateKey(new Date(endISO));
       const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes, productsRes] = await Promise.all([
-        fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, stages(name, color)")),
+        fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, lead_temperature, stages(name, color)")),
         fetchAllRows<any>(supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN")),
         fetchAllRows<any>(supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO)),
         fetchAllRows<any>(supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
@@ -462,6 +463,19 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         .map((p, i) => ({ ...p, color: p.name === "Tanpa produk" ? "#888" : PRODUCT_PALETTE[i % PRODUCT_PALETTE.length] }));
       const topStage = stageDist[0];
 
+      // Sebaran prioritas lead (Hot / Warm / Cold) + kondisi per stage
+      const tempDist = tempDistribution(scopedContacts as any);
+      const tempStageMap: Record<string, any> = {};
+      scopedContacts.forEach((r: any) => {
+        const sname = r.stages?.name || "Tanpa stage";
+        tempStageMap[sname] = tempStageMap[sname] || { name: sname, HOT: 0, WARM: 0, COLD: 0, NONE: 0 };
+        const k = ["HOT", "WARM", "COLD"].includes(r.lead_temperature) ? r.lead_temperature : "NONE";
+        tempStageMap[sname][k]++;
+      });
+      const tempByStage = Object.values(tempStageMap).sort(
+        (a: any, b: any) => (b.HOT + b.WARM + b.COLD + b.NONE) - (a.HOT + a.WARM + a.COLD + a.NONE),
+      );
+
       // Volume Pesan Harian: seluruh bubble (tidak di-scope).
       const dayMap: Record<string, { date: string; in: number; out: number }> = {};
       (msgsList || []).forEach((m: any) => {
@@ -567,7 +581,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         totalContacts: allContacts.length,               // Total Leads = seluruh /leads
         openConv: openConvsAll.length,                   // Percakapan Aktif = seluruh open
         messagesRange: (msgsList || []).length,          // Pesan = seluruh bubble di rentang
-        teamAvg, agentStats, stageDist, productDist, topStage, totalRevenue,
+        teamAvg, agentStats, stageDist, productDist, tempDist, tempByStage, topStage, totalRevenue,
         myInbox, dailySeries, transitions,
         agentLeadStats, contactMap, buckets,
       }));
@@ -641,6 +655,37 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
+        <Card className="glow-soft">
+          <CardHeader><CardTitle className="text-base">Distribusi Prioritas Lead</CardTitle>
+            <p className="text-xs text-muted-foreground">Sebaran Hot / Warm / Cold sesuai penilaian agent di chatbox inbox.</p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {(data?.tempDist || []).map((t: any) => (
+                <div key={t.key} className="rounded-lg border p-2">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="size-2 rounded-full" style={{ background: t.color }} /> {t.name}
+                  </div>
+                  <div className="text-xl font-bold tabular-nums">{t.count}</div>
+                </div>
+              ))}
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={(data?.tempByStage || []).slice(0, 8)}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                <XAxis dataKey="name" style={{ fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                <YAxis allowDecimals={false} style={{ fontSize: 11 }} />
+                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} wrapperStyle={tooltipWrapperStyle} cursor={tooltipCursor} />
+                <Legend />
+                {LEAD_TEMPERATURES.map((t) => (
+                  <Bar key={t.value} dataKey={t.value} stackId="temp" name={t.label} fill={t.color} />
+                ))}
+                <Bar dataKey="NONE" stackId="temp" name={TEMP_NONE_LABEL} fill={TEMP_NONE_COLOR} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
         <Card className="glow-soft">
           <CardHeader><CardTitle className="text-base">Distribusi Produk</CardTitle>
             <p className="text-xs text-muted-foreground">Sebaran leads berdasarkan produk yang diminati (dari katalog produk).</p>
