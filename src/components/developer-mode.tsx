@@ -117,13 +117,48 @@ const PUBLIC_TABLES = [
 
 /** Objek non-tabel yang juga harus ikut pindah. */
 const EXTRA_OBJECTS = [
-  { label: "Schema auth (akun login, sesi, identitas OAuth)", detail: "auth.users, auth.identities, auth.sessions" },
+  { label: "Schema auth (akun login, sesi, identitas OAuth)", detail: "auth.users, auth.identities, auth.sessions — 15 akun agent/admin" },
   { label: "Schema storage (metadata media chat)", detail: "storage.buckets, storage.objects — file fisik disalin terpisah" },
-  { label: "Bucket file chat-media", detail: "gambar, video, voice note, dokumen" },
+  { label: "Bucket file chat-media", detail: "gambar, video, voice note, dokumen, sticker (bucket privat)" },
   { label: "Enum & tipe kustom", detail: "app_role, conversation_status, message_direction, message_status, message_type" },
-  { label: "Function & trigger", detail: "has_role, is_admin, fr_can_see_*, handle_new_user, log_* , touch_updated_at" },
+  { label: "Function & trigger", detail: "has_role, is_admin, fr_can_see_*, is_fr_restricted, bpjs_contact_ids, handle_new_user, log_*, touch_updated_at" },
   { label: "RLS policy + GRANT", detail: "ikut otomatis pada pg_dump seluruh database" },
-  { label: "Secret Twilio & API key", detail: "TWILIO_* , SUPABASE_* — diisi ulang di .env VPS" },
+  { label: "Index performa", detail: "index pencarian chat (pg_trgm) + index leads/inbox — ikut pada pg_dump" },
+  { label: "Publication realtime", detail: "supabase_realtime: messages, conversations, contacts — wajib dibuat ulang di VPS" },
+  { label: "Extension", detail: "pgcrypto, uuid-ossp, pg_trgm — harus di-install sebelum restore" },
+  { label: "Edge Function WhatsApp", detail: "9 function Twilio + manage-agent + notify-agent-assign" },
+  { label: "Secret Twilio & API key", detail: "TWILIO_* , SUPABASE_*, LOVABLE_API_KEY — diisi ulang di .env VPS" },
+];
+
+/** Edge function yang harus ikut jalan di VPS agar semua fitur utuh. */
+const EDGE_FUNCTIONS = [
+  { name: "twilio-webhook", use: "Chat masuk + status pengiriman dari Twilio (URL webhook harus diarahkan ulang)" },
+  { name: "twilio-send", use: "Kirim chat, media, voice note dari Inbox" },
+  { name: "twilio-status", use: "Callback status terkirim/dibaca/gagal" },
+  { name: "twilio-test", use: "Tombol Test Connection & Test Send" },
+  { name: "twilio-settings", use: "Simpan kredensial gateway dari halaman ini" },
+  { name: "twilio-followup", use: "Tombol Follow Up (template di luar window 24 jam)" },
+  { name: "twilio-followup-backfill", use: "Perbaikan teks follow up lama" },
+  { name: "manage-agent", use: "Tambah / nonaktifkan akun agent" },
+  { name: "notify-agent-assign", use: "Notifikasi WhatsApp saat lead ditugaskan" },
+];
+
+/** Peta fitur aplikasi → apa yang wajib ikut pindah supaya fitur tetap jalan. */
+const FEATURE_COVERAGE = [
+  { feature: "Inbox & chat realtime", needs: "messages, conversations, contacts + publication realtime + bucket chat-media + twilio-webhook/twilio-send" },
+  { feature: "Media (foto, video, VN, dokumen)", needs: "bucket chat-media + policy storage.objects + rclone sync file fisik" },
+  { feature: "Template & Follow Up 24 jam", needs: "templates, system_settings (Content SID) + twilio-followup" },
+  { feature: "Leads & stages pipeline", needs: "contacts, stages (flag is_won), products, audit_events" },
+  { feature: "Lead temperature (Hot/Warm/Cold)", needs: "kolom contacts.lead_temperature + constraint-nya" },
+  { feature: "Dashboard Overview & First Response", needs: "messages, audit_events, shifts, fr_date_shifts, agent_shifts, assignment_invitations" },
+  { feature: "Invitation (accept/reject & bulk)", needs: "assignment_invitations + unique index pending + notify-agent-assign" },
+  { feature: "Ads Content Tracker & BPJS", needs: "content_codes, messages + index pencarian teks (pg_trgm) + function bpjs_contact_ids" },
+  { feature: "Bot Workflow", needs: "workflows, workflow_steps" },
+  { feature: "Broadcast", needs: "contacts, messages (filter window 24 jam) + twilio-send" },
+  { feature: "Akun, role & hak akses", needs: "auth.users, profiles, user_roles + function has_role/is_admin/fr_can_see_* + manage-agent" },
+  { feature: "Log gateway & aktivitas", needs: "whatsapp_gateway_logs, activity_logs, audit_events" },
+  { feature: "Export XLSX (leads, inbox, ads)", needs: "berjalan di browser — cukup database VPS terbaca" },
+  { feature: "Backfill chat Twilio", needs: "route /api/twilio-backfill pada app + kredensial Twilio di .env app" },
 ];
 
 type VpsCfg = {
@@ -298,28 +333,115 @@ cd /opt/supabase/docker && cp .env.example .env
 #   JWT_SECRET / ANON_KEY / SERVICE_ROLE_KEY  (generate baru, simpan aman)
 #   SITE_URL=https://crm.webhaus.id
 #   API_EXTERNAL_URL=${apiUrl}
+#   DISABLE_SIGNUP=true   (pendaftaran hanya lewat menu Agent)
 docker compose up -d
 
 # Hemat RAM (VPS 4GB): matikan service berat
-docker compose stop studio analytics imgproxy vector`,
+docker compose stop studio analytics imgproxy vector
 
-    cutover: `# 6) Cutover — pindah app ke VPS tanpa kehilangan data
+# Extension + publication realtime (wajib, kalau tidak Inbox tidak live)
+psql "postgresql://${pgUser}@127.0.0.1:${pgPort}/${pgDb}" <<'SQL'
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+DROP PUBLICATION IF EXISTS supabase_realtime;
+CREATE PUBLICATION supabase_realtime FOR TABLE
+  public.messages, public.conversations, public.contacts,
+  public.whatsapp_gateway_logs, public.assignment_invitations;
+ALTER TABLE public.messages REPLICA IDENTITY FULL;
+ALTER TABLE public.conversations REPLICA IDENTITY FULL;
+ALTER TABLE public.contacts REPLICA IDENTITY FULL;
+SQL
+
+# Bucket media (privat) — dibuat sekali di VPS
+psql "postgresql://${pgUser}@127.0.0.1:${pgPort}/${pgDb}" -c \\
+  "INSERT INTO storage.buckets (id, name, public) VALUES ('chat-media','chat-media',false)
+   ON CONFLICT (id) DO NOTHING;"`,
+
+    functions: `# 6) Pindahkan Edge Function WhatsApp ke VPS
+# Semua function ada di repo: supabase/functions/*
+${EDGE_FUNCTIONS.map((f) => `#   ${f.name.padEnd(26)} → ${f.use}`).join("\n")}
+
+npm i -g supabase
+supabase link --project-ref LOCAL --db-url "postgresql://${pgUser}@127.0.0.1:${pgPort}/${pgDb}"
+
+# Secret untuk function di VPS (tanpa ini kirim/terima chat gagal)
+supabase secrets set \\
+  TWILIO_ACCOUNT_SID=... TWILIO_AUTH_TOKEN=... \\
+  TWILIO_API_KEY_SID=... TWILIO_API_KEY_SECRET=... \\
+  TWILIO_WHATSAPP_NUMBER=... TWILIO_MESSAGING_SERVICE_SID=... \\
+  SUPABASE_URL=${apiUrl} SUPABASE_SERVICE_ROLE_KEY=... SUPABASE_PUBLISHABLE_KEY=...
+
+supabase functions deploy --no-verify-jwt twilio-webhook twilio-status twilio-test
+supabase functions deploy twilio-send twilio-settings twilio-followup \\
+  twilio-followup-backfill manage-agent notify-agent-assign`,
+
+    app: `# 7) Jalankan aplikasi CRM sendiri di VPS (mode VPS penuh, tanpa cloud Lovable)
+# Build tetap boleh dilakukan di Lovable; VPS cukup menjalankan hasil build.
+git clone <repo-anda> /opt/husada-crm && cd /opt/husada-crm
+cat > .env <<EOF
+VITE_SUPABASE_URL=${apiUrl}
+VITE_SUPABASE_PUBLISHABLE_KEY=ANON_KEY_VPS
+SUPABASE_URL=${apiUrl}
+SUPABASE_PUBLISHABLE_KEY=ANON_KEY_VPS
+SUPABASE_SERVICE_ROLE_KEY=SERVICE_ROLE_KEY_VPS
+TWILIO_ACCOUNT_SID=...
+TWILIO_AUTH_TOKEN=...
+TWILIO_API_KEY_SID=...
+TWILIO_API_KEY_SECRET=...
+TWILIO_WHATSAPP_NUMBER=...
+TWILIO_MESSAGING_SERVICE_SID=...
+EOF
+
+npm ci && npm run build
+# Jalankan sebagai service (port 3000) + auto-restart
+sudo npm i -g pm2
+pm2 start "npm run start" --name husada-crm && pm2 save && pm2 startup
+
+# Reverse proxy + SSL otomatis
+sudo apt install -y caddy
+printf 'crm.webhaus.id {\\n  reverse_proxy 127.0.0.1:3000\\n}\\n%s {\\n  reverse_proxy 127.0.0.1:8000\\n}\\n' "${apiUrl.replace(/^https?:\/\//, "")}" | sudo tee /etc/caddy/Caddyfile
+sudo systemctl restart caddy`,
+
+    cutover: `# 8) Cutover — pindah app ke VPS tanpa kehilangan data
 # a. Matikan sementara webhook Twilio (5 menit)
 # b. Mirroring terakhir: sudo /usr/local/bin/husada-mirror.sh && rclone sync supa:chat-media /var/lib/husada/chat-media
-# c. Ganti environment app di Lovable:
-#      VITE_SUPABASE_URL             = ${apiUrl}
-#      VITE_SUPABASE_PUBLISHABLE_KEY = ANON_KEY dari .env VPS
-#      SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY = milik VPS
-# d. Arahkan webhook Twilio ke: ${apiUrl}/functions/v1/twilio-webhook
-# e. Nyalakan traffic, pantau Developer Mode → Log Gateway
-# f. Setelah 7 hari stabil & backup jalan → database cloud boleh dimatikan`,
+# c. Arahkan DNS crm.webhaus.id ke ${host}
+# d. Arahkan seluruh webhook Twilio ke VPS:
+#      Incoming message : ${apiUrl}/functions/v1/twilio-webhook
+#      Status callback  : ${apiUrl}/functions/v1/twilio-status
+# e. Ubah mode di panel atas menjadi "VPS saja"
+# f. Uji cepat: kirim chat masuk, balas dari Inbox, kirim media, tombol Follow Up,
+#    buat agent baru, terima invitation, buka Dashboard & Ads Content
+# g. Setelah 7 hari stabil & backup jalan → database cloud boleh dimatikan`,
 
-    verify: `# 7) Verifikasi tidak ada data hilang — jalankan di VPS, bandingkan dengan tabel di atas
+    verify: `# 9) Verifikasi tidak ada data hilang — jalankan di VPS, bandingkan dengan tabel di atas
 psql "postgresql://${pgUser}@127.0.0.1:${pgPort}/${pgDb}" -c "
 ${PUBLIC_TABLES.map((t, i) => `${i === 0 ? "SELECT" : "UNION ALL SELECT"} '${t}' AS tabel, count(*) FROM public.${t}`).join("\n")}
 UNION ALL SELECT 'auth.users', count(*) FROM auth.users
 UNION ALL SELECT 'storage.objects', count(*) FROM storage.objects
-ORDER BY 1;"`,
+ORDER BY 1;"
+
+# Cek file media benar-benar tersalin
+rclone size supa:chat-media && du -sh /var/lib/husada/chat-media
+
+# Cek realtime & function hidup
+psql "postgresql://${pgUser}@127.0.0.1:${pgPort}/${pgDb}" -c "SELECT * FROM pg_publication_tables WHERE pubname='supabase_realtime';"
+curl -s -o /dev/null -w '%{http_code}\\n' ${apiUrl}/functions/v1/twilio-webhook`,
+
+    backup: `# 10) Backup harian di VPS (wajib setelah cloud dimatikan)
+sudo tee /usr/local/bin/husada-backup.sh >/dev/null <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+DIR=/var/backups/husada-daily; mkdir -p "$DIR"
+pg_dump --no-owner -Fc "postgresql://${pgUser}@127.0.0.1:${pgPort}/${pgDb}" \\
+  -f "$DIR/husada_$(date +%F).dump"
+tar czf "$DIR/media_$(date +%F).tgz" -C /var/lib/husada chat-media
+find "$DIR" -mtime +30 -delete
+EOF
+sudo chmod +x /usr/local/bin/husada-backup.sh
+( sudo crontab -l 2>/dev/null; echo "30 2 * * * /usr/local/bin/husada-backup.sh >> /var/log/husada-backup.log 2>&1" ) | sudo crontab -
+
+# Setelah semua hijau, cloud Lovable boleh dinonaktifkan:
+# hentikan cron mirroring → simpan dump terakhir → matikan project cloud.`,
   }), [host, pgUser, pgDb, pgPort, apiUrl]);
 
   return (
@@ -492,13 +614,45 @@ ORDER BY 1;"`,
         </CardContent>
       </Card>
 
+      {/* ---- Cakupan fitur ---- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><ListChecks className="size-5" /> Cakupan Fitur di VPS</CardTitle>
+          <CardDescription>
+            Setiap fitur aplikasi dan apa saja yang wajib ikut pindah supaya fitur itu tetap berjalan penuh di VPS.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-1.5">
+            {FEATURE_COVERAGE.map((f) => (
+              <div key={f.feature} className="rounded-lg border px-3 py-2 text-xs">
+                <p className="font-medium">{f.feature}</p>
+                <p className="text-muted-foreground mt-0.5">{f.needs}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-lg border p-3 space-y-1.5 bg-muted/30">
+            <p className="text-xs font-medium">Edge Function yang harus ikut dideploy ({EDGE_FUNCTIONS.length})</p>
+            <ul className="text-xs text-muted-foreground space-y-1">
+              {EDGE_FUNCTIONS.map((f) => (
+                <li key={f.name} className="flex gap-2">
+                  <code className="text-foreground shrink-0">{f.name}</code>
+                  <span className="truncate">— {f.use}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ---- Tutorial ---- */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Database className="size-5" /> Tutorial Migrasi &amp; Mirroring</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Database className="size-5" /> Tutorial Migrasi &amp; VPS Penuh</CardTitle>
           <CardDescription>
-            Urutan aman: siapkan Postgres → mirroring database + media → verifikasi jumlah baris → cutover.
-            Cloud hanya dimatikan setelah VPS terbukti stabil, jadi tidak ada data yang hilang.
+            Urutan aman: siapkan Postgres → mirroring database + media → jalankan stack, function, dan aplikasi di VPS →
+            verifikasi → cutover → backup. Cloud hanya dimatikan setelah VPS terbukti stabil, jadi tidak ada data yang hilang.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -506,9 +660,12 @@ ORDER BY 1;"`,
           <CodeBlock title="Langkah 2 — Mirroring seluruh database tiap jam" code={snippets.mirror} />
           <CodeBlock title="Langkah 3 — Mirroring file media (chat-media)" code={snippets.media} />
           <CodeBlock title="Langkah 4 — Opsional: replikasi nyaris realtime" code={snippets.realtime} />
-          <CodeBlock title="Langkah 5 — Jalankan Auth/Realtime/Storage di VPS" code={snippets.selfhost} />
-          <CodeBlock title="Langkah 6 — Cutover ke VPS" code={snippets.cutover} />
-          <CodeBlock title="Langkah 7 — Verifikasi semua tabel lengkap" code={snippets.verify} />
+          <CodeBlock title="Langkah 5 — Auth/Realtime/Storage + publication di VPS" code={snippets.selfhost} />
+          <CodeBlock title="Langkah 6 — Deploy seluruh Edge Function WhatsApp" code={snippets.functions} />
+          <CodeBlock title="Langkah 7 — Jalankan aplikasi CRM di VPS (VPS penuh)" code={snippets.app} />
+          <CodeBlock title="Langkah 8 — Cutover ke VPS" code={snippets.cutover} />
+          <CodeBlock title="Langkah 9 — Verifikasi data, media, realtime, function" code={snippets.verify} />
+          <CodeBlock title="Langkah 10 — Backup harian & matikan cloud" code={snippets.backup} />
 
           <div className="rounded-lg border p-3 text-xs space-y-1.5 bg-muted/30">
             <p className="font-medium">Data &amp; kredensial yang perlu disiapkan sebelum mulai</p>
@@ -516,9 +673,11 @@ ORDER BY 1;"`,
               <li>Connection string Postgres cloud (host, user, password, port 5432).</li>
               <li>Storage S3 access key &amp; secret untuk menyalin bucket <code>chat-media</code>.</li>
               <li>Semua secret Twilio: <code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code>, <code>TWILIO_API_KEY_SID</code>, <code>TWILIO_API_KEY_SECRET</code>, <code>TWILIO_WHATSAPP_NUMBER</code>, <code>TWILIO_MESSAGING_SERVICE_SID</code>.</li>
+              <li>Content SID template follow up &amp; notifikasi agent (tersimpan di <code>system_settings</code>, ikut termirror).</li>
               <li><code>JWT_SECRET</code>, <code>ANON_KEY</code>, <code>SERVICE_ROLE_KEY</code> baru untuk VPS — simpan aman, hilangnya JWT_SECRET merusak semua sesi login.</li>
-              <li>Domain/subdomain + sertifikat SSL untuk API VPS ({apiUrl}).</li>
-              <li>Spesifikasi minimum nyaman: 2 vCPU, 4 GB RAM, 50 GB NVMe, swap 2 GB.</li>
+              <li>Akses DNS <code>crm.webhaus.id</code> + subdomain API VPS ({apiUrl}) untuk SSL otomatis.</li>
+              <li>Akses repo aplikasi (untuk build &amp; menjalankan app di VPS pada mode VPS penuh).</li>
+              <li>Spesifikasi minimum nyaman: 2 vCPU, 4 GB RAM, 50 GB NVMe, swap 2 GB. Untuk app + stack Supabase sekaligus: 4 vCPU, 8 GB RAM.</li>
               <li>Backup harian wajib di VPS — cloud tidak lagi menyimpan cadangan setelah dimatikan.</li>
             </ul>
           </div>
