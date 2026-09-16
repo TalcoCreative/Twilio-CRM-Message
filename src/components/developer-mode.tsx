@@ -614,13 +614,45 @@ sudo chmod +x /usr/local/bin/husada-backup.sh
         </CardContent>
       </Card>
 
+      {/* ---- Cakupan fitur ---- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><ListChecks className="size-5" /> Cakupan Fitur di VPS</CardTitle>
+          <CardDescription>
+            Setiap fitur aplikasi dan apa saja yang wajib ikut pindah supaya fitur itu tetap berjalan penuh di VPS.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-1.5">
+            {FEATURE_COVERAGE.map((f) => (
+              <div key={f.feature} className="rounded-lg border px-3 py-2 text-xs">
+                <p className="font-medium">{f.feature}</p>
+                <p className="text-muted-foreground mt-0.5">{f.needs}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-lg border p-3 space-y-1.5 bg-muted/30">
+            <p className="text-xs font-medium">Edge Function yang harus ikut dideploy ({EDGE_FUNCTIONS.length})</p>
+            <ul className="text-xs text-muted-foreground space-y-1">
+              {EDGE_FUNCTIONS.map((f) => (
+                <li key={f.name} className="flex gap-2">
+                  <code className="text-foreground shrink-0">{f.name}</code>
+                  <span className="truncate">— {f.use}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ---- Tutorial ---- */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Database className="size-5" /> Tutorial Migrasi &amp; Mirroring</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Database className="size-5" /> Tutorial Migrasi &amp; VPS Penuh</CardTitle>
           <CardDescription>
-            Urutan aman: siapkan Postgres → mirroring database + media → verifikasi jumlah baris → cutover.
-            Cloud hanya dimatikan setelah VPS terbukti stabil, jadi tidak ada data yang hilang.
+            Urutan aman: siapkan Postgres → mirroring database + media → jalankan stack, function, dan aplikasi di VPS →
+            verifikasi → cutover → backup. Cloud hanya dimatikan setelah VPS terbukti stabil, jadi tidak ada data yang hilang.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -628,9 +660,12 @@ sudo chmod +x /usr/local/bin/husada-backup.sh
           <CodeBlock title="Langkah 2 — Mirroring seluruh database tiap jam" code={snippets.mirror} />
           <CodeBlock title="Langkah 3 — Mirroring file media (chat-media)" code={snippets.media} />
           <CodeBlock title="Langkah 4 — Opsional: replikasi nyaris realtime" code={snippets.realtime} />
-          <CodeBlock title="Langkah 5 — Jalankan Auth/Realtime/Storage di VPS" code={snippets.selfhost} />
-          <CodeBlock title="Langkah 6 — Cutover ke VPS" code={snippets.cutover} />
-          <CodeBlock title="Langkah 7 — Verifikasi semua tabel lengkap" code={snippets.verify} />
+          <CodeBlock title="Langkah 5 — Auth/Realtime/Storage + publication di VPS" code={snippets.selfhost} />
+          <CodeBlock title="Langkah 6 — Deploy seluruh Edge Function WhatsApp" code={snippets.functions} />
+          <CodeBlock title="Langkah 7 — Jalankan aplikasi CRM di VPS (VPS penuh)" code={snippets.app} />
+          <CodeBlock title="Langkah 8 — Cutover ke VPS" code={snippets.cutover} />
+          <CodeBlock title="Langkah 9 — Verifikasi data, media, realtime, function" code={snippets.verify} />
+          <CodeBlock title="Langkah 10 — Backup harian & matikan cloud" code={snippets.backup} />
 
           <div className="rounded-lg border p-3 text-xs space-y-1.5 bg-muted/30">
             <p className="font-medium">Data &amp; kredensial yang perlu disiapkan sebelum mulai</p>
@@ -638,9 +673,11 @@ sudo chmod +x /usr/local/bin/husada-backup.sh
               <li>Connection string Postgres cloud (host, user, password, port 5432).</li>
               <li>Storage S3 access key &amp; secret untuk menyalin bucket <code>chat-media</code>.</li>
               <li>Semua secret Twilio: <code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code>, <code>TWILIO_API_KEY_SID</code>, <code>TWILIO_API_KEY_SECRET</code>, <code>TWILIO_WHATSAPP_NUMBER</code>, <code>TWILIO_MESSAGING_SERVICE_SID</code>.</li>
+              <li>Content SID template follow up &amp; notifikasi agent (tersimpan di <code>system_settings</code>, ikut termirror).</li>
               <li><code>JWT_SECRET</code>, <code>ANON_KEY</code>, <code>SERVICE_ROLE_KEY</code> baru untuk VPS — simpan aman, hilangnya JWT_SECRET merusak semua sesi login.</li>
-              <li>Domain/subdomain + sertifikat SSL untuk API VPS ({apiUrl}).</li>
-              <li>Spesifikasi minimum nyaman: 2 vCPU, 4 GB RAM, 50 GB NVMe, swap 2 GB.</li>
+              <li>Akses DNS <code>crm.webhaus.id</code> + subdomain API VPS ({apiUrl}) untuk SSL otomatis.</li>
+              <li>Akses repo aplikasi (untuk build &amp; menjalankan app di VPS pada mode VPS penuh).</li>
+              <li>Spesifikasi minimum nyaman: 2 vCPU, 4 GB RAM, 50 GB NVMe, swap 2 GB. Untuk app + stack Supabase sekaligus: 4 vCPU, 8 GB RAM.</li>
               <li>Backup harian wajib di VPS — cloud tidak lagi menyimpan cadangan setelah dimatikan.</li>
             </ul>
           </div>
