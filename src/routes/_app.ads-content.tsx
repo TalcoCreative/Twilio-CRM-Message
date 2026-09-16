@@ -108,22 +108,16 @@ function AdsContentPage() {
   }
 
   async function loadBpjs() {
-    const data = await fetchAllRows((f, t) =>
-      supabase
-        .from("messages")
-        .select("content, conversations!inner(contact_id)")
-        .or("content.ilike.%bpjs%,content.ilike.%kis%,content.ilike.%askes%")
-        .order("created_at", { ascending: false })
-        .range(f, t),
+    // Dihitung di database (satu panggilan) supaya cepat & tidak kena limit baris.
+    const { data, error } = await (supabase as any).rpc("bpjs_contact_ids");
+    if (error) { console.error("[ads-content] gagal memuat data BPJS", error); return; }
+    const bset = new Set<string>(
+      ((data as any[]) || []).map((r: any) => (typeof r === "string" ? r : r?.contact_id)).filter(Boolean),
     );
-    const bset = new Set<string>();
-    (data || []).forEach((m: any) => {
-      const cid = m?.conversations?.contact_id;
-      if (cid && BPJS_KEYWORD_RE.test(String(m?.content || ""))) bset.add(cid);
-    });
     setCached("ads:bpjs", Array.from(bset));
     setBpjsContactIds(bset);
   }
+
 
 
   useEffect(() => {
