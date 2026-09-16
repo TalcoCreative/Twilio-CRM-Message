@@ -901,6 +901,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      bpjs_contact_ids: {
+        Args: never
+        Returns: {
+          contact_id: string
+        }[]
+      }
       fr_can_see_contact: { Args: { _contact_id: string }; Returns: boolean }
       fr_can_see_conversation: { Args: { _conv_id: string }; Returns: boolean }
       has_role: {
@@ -911,6 +917,9 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      is_fr_restricted: { Args: never; Returns: boolean }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       app_role: "super_admin" | "admin" | "agent" | "first_response"
