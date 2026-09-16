@@ -117,13 +117,48 @@ const PUBLIC_TABLES = [
 
 /** Objek non-tabel yang juga harus ikut pindah. */
 const EXTRA_OBJECTS = [
-  { label: "Schema auth (akun login, sesi, identitas OAuth)", detail: "auth.users, auth.identities, auth.sessions" },
+  { label: "Schema auth (akun login, sesi, identitas OAuth)", detail: "auth.users, auth.identities, auth.sessions — 15 akun agent/admin" },
   { label: "Schema storage (metadata media chat)", detail: "storage.buckets, storage.objects — file fisik disalin terpisah" },
-  { label: "Bucket file chat-media", detail: "gambar, video, voice note, dokumen" },
+  { label: "Bucket file chat-media", detail: "gambar, video, voice note, dokumen, sticker (bucket privat)" },
   { label: "Enum & tipe kustom", detail: "app_role, conversation_status, message_direction, message_status, message_type" },
-  { label: "Function & trigger", detail: "has_role, is_admin, fr_can_see_*, handle_new_user, log_* , touch_updated_at" },
+  { label: "Function & trigger", detail: "has_role, is_admin, fr_can_see_*, is_fr_restricted, bpjs_contact_ids, handle_new_user, log_*, touch_updated_at" },
   { label: "RLS policy + GRANT", detail: "ikut otomatis pada pg_dump seluruh database" },
-  { label: "Secret Twilio & API key", detail: "TWILIO_* , SUPABASE_* — diisi ulang di .env VPS" },
+  { label: "Index performa", detail: "index pencarian chat (pg_trgm) + index leads/inbox — ikut pada pg_dump" },
+  { label: "Publication realtime", detail: "supabase_realtime: messages, conversations, contacts — wajib dibuat ulang di VPS" },
+  { label: "Extension", detail: "pgcrypto, uuid-ossp, pg_trgm — harus di-install sebelum restore" },
+  { label: "Edge Function WhatsApp", detail: "9 function Twilio + manage-agent + notify-agent-assign" },
+  { label: "Secret Twilio & API key", detail: "TWILIO_* , SUPABASE_*, LOVABLE_API_KEY — diisi ulang di .env VPS" },
+];
+
+/** Edge function yang harus ikut jalan di VPS agar semua fitur utuh. */
+const EDGE_FUNCTIONS = [
+  { name: "twilio-webhook", use: "Chat masuk + status pengiriman dari Twilio (URL webhook harus diarahkan ulang)" },
+  { name: "twilio-send", use: "Kirim chat, media, voice note dari Inbox" },
+  { name: "twilio-status", use: "Callback status terkirim/dibaca/gagal" },
+  { name: "twilio-test", use: "Tombol Test Connection & Test Send" },
+  { name: "twilio-settings", use: "Simpan kredensial gateway dari halaman ini" },
+  { name: "twilio-followup", use: "Tombol Follow Up (template di luar window 24 jam)" },
+  { name: "twilio-followup-backfill", use: "Perbaikan teks follow up lama" },
+  { name: "manage-agent", use: "Tambah / nonaktifkan akun agent" },
+  { name: "notify-agent-assign", use: "Notifikasi WhatsApp saat lead ditugaskan" },
+];
+
+/** Peta fitur aplikasi → apa yang wajib ikut pindah supaya fitur tetap jalan. */
+const FEATURE_COVERAGE = [
+  { feature: "Inbox & chat realtime", needs: "messages, conversations, contacts + publication realtime + bucket chat-media + twilio-webhook/twilio-send" },
+  { feature: "Media (foto, video, VN, dokumen)", needs: "bucket chat-media + policy storage.objects + rclone sync file fisik" },
+  { feature: "Template & Follow Up 24 jam", needs: "templates, system_settings (Content SID) + twilio-followup" },
+  { feature: "Leads & stages pipeline", needs: "contacts, stages (flag is_won), products, audit_events" },
+  { feature: "Lead temperature (Hot/Warm/Cold)", needs: "kolom contacts.lead_temperature + constraint-nya" },
+  { feature: "Dashboard Overview & First Response", needs: "messages, audit_events, shifts, fr_date_shifts, agent_shifts, assignment_invitations" },
+  { feature: "Invitation (accept/reject & bulk)", needs: "assignment_invitations + unique index pending + notify-agent-assign" },
+  { feature: "Ads Content Tracker & BPJS", needs: "content_codes, messages + index pencarian teks (pg_trgm) + function bpjs_contact_ids" },
+  { feature: "Bot Workflow", needs: "workflows, workflow_steps" },
+  { feature: "Broadcast", needs: "contacts, messages (filter window 24 jam) + twilio-send" },
+  { feature: "Akun, role & hak akses", needs: "auth.users, profiles, user_roles + function has_role/is_admin/fr_can_see_* + manage-agent" },
+  { feature: "Log gateway & aktivitas", needs: "whatsapp_gateway_logs, activity_logs, audit_events" },
+  { feature: "Export XLSX (leads, inbox, ads)", needs: "berjalan di browser — cukup database VPS terbaca" },
+  { feature: "Backfill chat Twilio", needs: "route /api/twilio-backfill pada app + kredensial Twilio di .env app" },
 ];
 
 type VpsCfg = {
