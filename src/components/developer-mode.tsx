@@ -279,8 +279,19 @@ sudo systemctl restart postgresql
 sudo ufw allow from 0.0.0.0/0 to any port ${pgPort} proto tcp`,
 
     mirror: `# 2) Mirroring SELURUH database (public + auth + storage) tiap jam
+#
+# PENTING — format alamat database cloud SUDAH BERUBAH.
+#   LAMA (tidak lagi resolve):  db.<PROJECT_REF>.supabase.co:5432
+#   BARU (pakai ini):           aws-0-<REGION>.pooler.supabase.com:5432
+#   Username WAJIB  postgres.<PROJECT_REF>  (bukan "postgres" saja)
+#   Port 5432 = session mode (bisa pg_dump). Port 6543 TIDAK bisa untuk pg_dump.
+#
+# Contoh untuk project ini (region ap-southeast-1):
+#   postgresql://postgres.idoqnwlpdckywyuzdeys:PASSWORD@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
+#
+# Simpan string-nya ke file (jangan pernah ditempel di chat / commit ke git):
 sudo install -m 600 /dev/null /root/.husada_cloud_url
-echo 'postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres' | sudo tee /root/.husada_cloud_url >/dev/null
+sudo nano /root/.husada_cloud_url    # tempel 1 baris connection string di atas
 
 sudo tee /usr/local/bin/husada-mirror.sh >/dev/null <<'EOF'
 #!/usr/bin/env bash
