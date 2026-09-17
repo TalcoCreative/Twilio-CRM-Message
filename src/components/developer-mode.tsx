@@ -453,6 +453,26 @@ sudo chmod +x /usr/local/bin/husada-backup.sh
 
 # Setelah semua hijau, cloud Lovable boleh dinonaktifkan:
 # hentikan cron mirroring → simpan dump terakhir → matikan project cloud.`,
+
+    git: `# 11) Kerja dari folder lokal & push sendiri (tidak harus lewat Lovable)
+#
+# a. Berhenti melacak file .env (isi file lokal tetap aman)
+git rm --cached .env
+printf '.env\\n.env.*\\n.husada-migration/\\n' >> .gitignore
+git add .gitignore
+git commit -m "Stop tracking .env"
+
+# b. Kalau push ditolak 403:
+#    artinya akun GitHub kamu belum punya akses tulis ke repo.
+#    Minta owner repo menambahkan akun kamu sebagai collaborator (Write),
+#    lalu ulangi:
+git push
+
+# c. Cek tidak ada rahasia yang masih terlacak
+git ls-files | grep -E '^\\.env|husada-migration' || echo "bersih"
+
+# Catatan: anon key memang boleh publik (dilindungi RLS),
+# jadi tidak perlu menulis ulang history git.`,
   }), [host, pgUser, pgDb, pgPort, apiUrl]);
 
   return (
