@@ -697,6 +697,7 @@ git ls-files | grep -E '^\\.env|husada-migration' || echo "bersih"
           <CodeBlock title="Langkah 8 — Cutover ke VPS" code={snippets.cutover} />
           <CodeBlock title="Langkah 9 — Verifikasi data, media, realtime, function" code={snippets.verify} />
           <CodeBlock title="Langkah 10 — Backup harian & matikan cloud" code={snippets.backup} />
+          <CodeBlock title="Langkah 11 — Kerja dari folder lokal & push sendiri" code={snippets.git} />
 
           <div className="rounded-lg border p-3 text-xs space-y-1.5 bg-muted/30">
             <p className="font-medium">Data &amp; kredensial yang perlu disiapkan sebelum mulai</p>
