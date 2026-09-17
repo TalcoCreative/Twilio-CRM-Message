@@ -279,8 +279,19 @@ sudo systemctl restart postgresql
 sudo ufw allow from 0.0.0.0/0 to any port ${pgPort} proto tcp`,
 
     mirror: `# 2) Mirroring SELURUH database (public + auth + storage) tiap jam
+#
+# PENTING — format alamat database cloud SUDAH BERUBAH.
+#   LAMA (tidak lagi resolve):  db.<PROJECT_REF>.supabase.co:5432
+#   BARU (pakai ini):           aws-0-<REGION>.pooler.supabase.com:5432
+#   Username WAJIB  postgres.<PROJECT_REF>  (bukan "postgres" saja)
+#   Port 5432 = session mode (bisa pg_dump). Port 6543 TIDAK bisa untuk pg_dump.
+#
+# Contoh untuk project ini (region ap-southeast-1):
+#   postgresql://postgres.idoqnwlpdckywyuzdeys:PASSWORD@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
+#
+# Simpan string-nya ke file (jangan pernah ditempel di chat / commit ke git):
 sudo install -m 600 /dev/null /root/.husada_cloud_url
-echo 'postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres' | sudo tee /root/.husada_cloud_url >/dev/null
+sudo nano /root/.husada_cloud_url    # tempel 1 baris connection string di atas
 
 sudo tee /usr/local/bin/husada-mirror.sh >/dev/null <<'EOF'
 #!/usr/bin/env bash
@@ -318,7 +329,7 @@ CREATE PUBLICATION husada_pub FOR ALL TABLES;
 
 -- Di VPS (struktur harus sudah ada dari pg_restore --schema-only):
 CREATE SUBSCRIPTION husada_sub
-  CONNECTION 'postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres'
+  CONNECTION 'postgresql://postgres.<PROJECT_REF>:PASSWORD@aws-0-<REGION>.pooler.supabase.com:5432/postgres'
   PUBLICATION husada_pub
   WITH (copy_data = true, create_slot = true);
 
@@ -442,6 +453,26 @@ sudo chmod +x /usr/local/bin/husada-backup.sh
 
 # Setelah semua hijau, cloud Lovable boleh dinonaktifkan:
 # hentikan cron mirroring → simpan dump terakhir → matikan project cloud.`,
+
+    git: `# 11) Kerja dari folder lokal & push sendiri (tidak harus lewat Lovable)
+#
+# a. Berhenti melacak file .env (isi file lokal tetap aman)
+git rm --cached .env
+printf '.env\\n.env.*\\n.husada-migration/\\n' >> .gitignore
+git add .gitignore
+git commit -m "Stop tracking .env"
+
+# b. Kalau push ditolak 403:
+#    artinya akun GitHub kamu belum punya akses tulis ke repo.
+#    Minta owner repo menambahkan akun kamu sebagai collaborator (Write),
+#    lalu ulangi:
+git push
+
+# c. Cek tidak ada rahasia yang masih terlacak
+git ls-files | grep -E '^\\.env|husada-migration' || echo "bersih"
+
+# Catatan: anon key memang boleh publik (dilindungi RLS),
+# jadi tidak perlu menulis ulang history git.`,
   }), [host, pgUser, pgDb, pgPort, apiUrl]);
 
   return (
@@ -666,6 +697,7 @@ sudo chmod +x /usr/local/bin/husada-backup.sh
           <CodeBlock title="Langkah 8 — Cutover ke VPS" code={snippets.cutover} />
           <CodeBlock title="Langkah 9 — Verifikasi data, media, realtime, function" code={snippets.verify} />
           <CodeBlock title="Langkah 10 — Backup harian & matikan cloud" code={snippets.backup} />
+          <CodeBlock title="Langkah 11 — Kerja dari folder lokal & push sendiri" code={snippets.git} />
 
           <div className="rounded-lg border p-3 text-xs space-y-1.5 bg-muted/30">
             <p className="font-medium">Data &amp; kredensial yang perlu disiapkan sebelum mulai</p>
