@@ -329,7 +329,7 @@ CREATE PUBLICATION husada_pub FOR ALL TABLES;
 
 -- Di VPS (struktur harus sudah ada dari pg_restore --schema-only):
 CREATE SUBSCRIPTION husada_sub
-  CONNECTION 'postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres'
+  CONNECTION 'postgresql://postgres.<PROJECT_REF>:PASSWORD@aws-0-<REGION>.pooler.supabase.com:5432/postgres'
   PUBLICATION husada_pub
   WITH (copy_data = true, create_slot = true);
 
