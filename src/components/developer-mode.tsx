@@ -12,7 +12,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw, Cloud, CloudOff, ListChecks, AlertTriangle, FileSpreadsheet, Download } from "lucide-react";
+import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw, Cloud, CloudOff, ListChecks, AlertTriangle, FileSpreadsheet, Download, Eye, EyeOff } from "lucide-react";
+import { getDatabaseUrl } from "@/lib/developer.functions";
 
 const DEV_PIN = "250321";
 const SESSION_KEY = "husada_dev_mode_ok";
@@ -198,6 +199,27 @@ export function VpsMirrorPanel() {
   const [counting, setCounting] = useState(false);
   const [confirmMode, setConfirmMode] = useState<string | null>(null);
   const [ack, setAck] = useState(false);
+  const [dbUrl, setDbUrl] = useState<string | null>(null);
+  const [dbUrlVisible, setDbUrlVisible] = useState(false);
+  const [dbUrlLoading, setDbUrlLoading] = useState(false);
+
+  async function revealDbUrl() {
+    if (dbUrl) { setDbUrlVisible((v) => !v); return; }
+    setDbUrlLoading(true);
+    try {
+      const res = await getDatabaseUrl();
+      if (!res.dbUrl) {
+        toast.error("Database URL tidak tersedia di server. Coba lagi nanti.");
+        return;
+      }
+      setDbUrl(res.dbUrl);
+      setDbUrlVisible(true);
+    } catch {
+      toast.error("Gagal mengambil Database URL. Pastikan kamu sudah login.");
+    } finally {
+      setDbUrlLoading(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -286,8 +308,8 @@ sudo ufw allow from 0.0.0.0/0 to any port ${pgPort} proto tcp`,
 #   Username WAJIB  postgres.<PROJECT_REF>  (bukan "postgres" saja)
 #   Port 5432 = session mode (bisa pg_dump). Port 6543 TIDAK bisa untuk pg_dump.
 #
-# Contoh untuk project ini (region ap-southeast-1):
-#   postgresql://postgres.idoqnwlpdckywyuzdeys:PASSWORD@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
+# Contoh untuk project ini (region ap-southeast-2):
+#   postgresql://postgres.idoqnwlpdckywyuzdeys:PASSWORD@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres
 #
 # Simpan string-nya ke file (jangan pernah ditempel di chat / commit ke git):
 sudo install -m 600 /dev/null /root/.husada_cloud_url
@@ -318,7 +340,7 @@ sudo chmod +x /usr/local/bin/husada-mirror.sh
 sudo apt install -y rclone
 rclone config create supa s3 provider=Other \\
   access_key_id=STORAGE_ACCESS_KEY secret_access_key=STORAGE_SECRET_KEY \\
-  endpoint=https://PROJECT.supabase.co/storage/v1/s3 region=ap-southeast-1
+  endpoint=https://PROJECT.supabase.co/storage/v1/s3 region=ap-southeast-2
 
 rclone sync supa:chat-media /var/lib/husada/chat-media --fast-list -P
 ( sudo crontab -l 2>/dev/null; echo "15 * * * * rclone sync supa:chat-media /var/lib/husada/chat-media >> /var/log/husada-media.log 2>&1" ) | sudo crontab -`,
@@ -509,6 +531,38 @@ git ls-files | grep -E '^\\.env|husada-migration' || echo "bersih"
               data lama tidak terhapus, cloud hanya berhenti menerima traffic baru.
             </span>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ---- Database URL Cloud ---- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Database className="size-5" /> Database URL Cloud</CardTitle>
+          <CardDescription>
+            Connection string lengkap (sudah termasuk password) untuk mirroring / pg_dump ke VPS.
+            String ini diambil langsung dari secret server — jangan ditempel di chat publik atau di-commit ke git.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={revealDbUrl} disabled={dbUrlLoading}>
+              {dbUrlVisible ? <EyeOff className="size-4 mr-1.5" /> : <Eye className="size-4 mr-1.5" />}
+              {dbUrlLoading ? "Mengambil..." : dbUrlVisible ? "Sembunyikan" : "Tampilkan Database URL"}
+            </Button>
+            {dbUrl && dbUrlVisible && (
+              <Button size="sm" variant="ghost"
+                onClick={() => { navigator.clipboard.writeText(dbUrl); toast.success("Database URL disalin — simpan di tempat aman"); }}>
+                <Copy className="size-4 mr-1.5" /> Salin
+              </Button>
+            )}
+          </div>
+          {dbUrl && dbUrlVisible && (
+            <pre className="rounded-lg border bg-muted/40 p-3 text-[11px] font-mono break-all whitespace-pre-wrap">{dbUrl}</pre>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Pakai <b>port 5432</b> (session mode) untuk <code>pg_dump</code>/restore. Port 6543 hanya untuk koneksi aplikasi biasa.
+            Region project ini: <code>ap-southeast-2</code>.
+          </p>
         </CardContent>
       </Card>
 
