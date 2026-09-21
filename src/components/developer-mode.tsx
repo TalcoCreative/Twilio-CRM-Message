@@ -340,7 +340,7 @@ sudo chmod +x /usr/local/bin/husada-mirror.sh
 sudo apt install -y rclone
 rclone config create supa s3 provider=Other \\
   access_key_id=STORAGE_ACCESS_KEY secret_access_key=STORAGE_SECRET_KEY \\
-  endpoint=https://PROJECT.supabase.co/storage/v1/s3 region=ap-southeast-1
+  endpoint=https://PROJECT.supabase.co/storage/v1/s3 region=ap-southeast-2
 
 rclone sync supa:chat-media /var/lib/husada/chat-media --fast-list -P
 ( sudo crontab -l 2>/dev/null; echo "15 * * * * rclone sync supa:chat-media /var/lib/husada/chat-media >> /var/log/husada-media.log 2>&1" ) | sudo crontab -`,
