@@ -12,7 +12,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw, Cloud, CloudOff, ListChecks, AlertTriangle, FileSpreadsheet, Download } from "lucide-react";
+import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw, Cloud, CloudOff, ListChecks, AlertTriangle, FileSpreadsheet, Download, Eye, EyeOff } from "lucide-react";
+import { getDatabaseUrl } from "@/lib/developer.functions";
 
 const DEV_PIN = "250321";
 const SESSION_KEY = "husada_dev_mode_ok";
@@ -198,6 +199,27 @@ export function VpsMirrorPanel() {
   const [counting, setCounting] = useState(false);
   const [confirmMode, setConfirmMode] = useState<string | null>(null);
   const [ack, setAck] = useState(false);
+  const [dbUrl, setDbUrl] = useState<string | null>(null);
+  const [dbUrlVisible, setDbUrlVisible] = useState(false);
+  const [dbUrlLoading, setDbUrlLoading] = useState(false);
+
+  async function revealDbUrl() {
+    if (dbUrl) { setDbUrlVisible((v) => !v); return; }
+    setDbUrlLoading(true);
+    try {
+      const res = await getDatabaseUrl();
+      if (!res.dbUrl) {
+        toast.error("Database URL tidak tersedia di server. Coba lagi nanti.");
+        return;
+      }
+      setDbUrl(res.dbUrl);
+      setDbUrlVisible(true);
+    } catch {
+      toast.error("Gagal mengambil Database URL. Pastikan kamu sudah login.");
+    } finally {
+      setDbUrlLoading(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -286,8 +308,8 @@ sudo ufw allow from 0.0.0.0/0 to any port ${pgPort} proto tcp`,
 #   Username WAJIB  postgres.<PROJECT_REF>  (bukan "postgres" saja)
 #   Port 5432 = session mode (bisa pg_dump). Port 6543 TIDAK bisa untuk pg_dump.
 #
-# Contoh untuk project ini (region ap-southeast-1):
-#   postgresql://postgres.idoqnwlpdckywyuzdeys:PASSWORD@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
+# Contoh untuk project ini (region ap-southeast-2):
+#   postgresql://postgres.idoqnwlpdckywyuzdeys:PASSWORD@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres
 #
 # Simpan string-nya ke file (jangan pernah ditempel di chat / commit ke git):
 sudo install -m 600 /dev/null /root/.husada_cloud_url
