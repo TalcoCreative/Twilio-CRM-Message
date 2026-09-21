@@ -36,7 +36,16 @@ function AuthPage() {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setSubmitting(false);
-      toast.error(error.message);
+      const msg = error.message?.toLowerCase() ?? "";
+      if (msg.includes("invalid login credentials")) {
+        toast.error("Email atau password salah. Perhatikan huruf besar/kecil dan tanda baca (titik, koma, spasi) — password bersifat case-sensitive.");
+      } else if (msg.includes("email not confirmed")) {
+        toast.error("Email belum dikonfirmasi. Cek inbox email kamu.");
+      } else if (msg.includes("too many requests") || msg.includes("rate limit")) {
+        toast.error("Terlalu banyak percobaan login. Tunggu beberapa menit lalu coba lagi.");
+      } else {
+        toast.error(`Gagal login: ${error.message}`);
+      }
       return;
     }
     const { data: prof } = await supabase.from("profiles").select("is_active, full_name").eq("id", data.user.id).maybeSingle();
