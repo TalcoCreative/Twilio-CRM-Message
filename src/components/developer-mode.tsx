@@ -12,7 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw, Cloud, CloudOff, ListChecks, AlertTriangle, FileSpreadsheet, Download, Eye, EyeOff } from "lucide-react";
+import { Lock, ShieldCheck, Server, Copy, Database, RefreshCw, Cloud, CloudOff, ListChecks, AlertTriangle, FileSpreadsheet, Download, Eye, EyeOff, Globe, CheckCircle2, XCircle } from "lucide-react";
 import { getDatabaseUrl } from "@/lib/developer.functions";
 
 const DEV_PIN = "250321";
