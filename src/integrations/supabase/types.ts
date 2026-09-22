@@ -754,6 +754,94 @@ export type Database = {
         }
         Relationships: []
       }
+      webinar_registrations: {
+        Row: {
+          code_used: string
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          id: string
+          message_sent: string | null
+          webinar_id: string
+        }
+        Insert: {
+          code_used: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          message_sent?: string | null
+          webinar_id: string
+        }
+        Update: {
+          code_used?: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          message_sent?: string | null
+          webinar_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webinar_registrations_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webinar_registrations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webinar_registrations_webinar_id_fkey"
+            columns: ["webinar_id"]
+            isOneToOne: false
+            referencedRelation: "webinars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      webinars: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          message_template: string
+          name: string
+          stop_chatbot: boolean
+          updated_at: string
+          zoom_link: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          message_template?: string
+          name: string
+          stop_chatbot?: boolean
+          updated_at?: string
+          zoom_link?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          message_template?: string
+          name?: string
+          stop_chatbot?: boolean
+          updated_at?: string
+          zoom_link?: string
+        }
+        Relationships: []
+      }
       whatsapp_gateway_logs: {
         Row: {
           conversation_id: string | null
