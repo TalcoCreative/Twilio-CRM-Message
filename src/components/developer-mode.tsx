@@ -587,6 +587,53 @@ git ls-files | grep -E '^\\.env|husada-migration' || echo "bersih"
         </CardContent>
       </Card>
 
+      {/* ---- Domain api.husada → VPS ---- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Globe className="size-5" /> Domain api.husada → VPS</CardTitle>
+          <CardDescription>
+            Arahkan subdomain api ke IP VPS. IP tujuan mengikuti isian <b>IP / Hostname VPS</b> di kartu Database Mirroring (saat ini: <code className="font-mono">{cfg.vps_host || "belum diisi"}</code>).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Domain / Subdomain API</Label>
+              <Input value={apiDomain} onChange={(e) => setApiDomain(e.target.value)}
+                placeholder="api.husada.com" className="font-mono text-xs" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>IP Tujuan (dari isian VPS di bawah)</Label>
+              <Input value={cfg.vps_host} onChange={(e) => setCfg({ ...cfg, vps_host: e.target.value })}
+                placeholder="187.53.142.102" className="font-mono text-xs" />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={checkDns} disabled={dnsChecking}>
+              <RefreshCw className={`size-4 mr-1.5 ${dnsChecking ? "animate-spin" : ""}`} />
+              {dnsChecking ? "Mengecek DNS..." : "Cek DNS Sekarang"}
+            </Button>
+            {dnsResult && (
+              dnsResult.ok
+                ? <Badge className="bg-emerald-500/15 text-emerald-600 border border-emerald-500/30"><CheckCircle2 className="size-3.5 mr-1" /> Sudah mengarah ke VPS ({dnsResult.ips.join(", ")})</Badge>
+                : <Badge variant="outline" className="text-amber-600 border-amber-500/40"><XCircle className="size-3.5 mr-1" /> {dnsResult.ips.length ? `Masih ke IP lain: ${dnsResult.ips.join(", ")}` : "Belum ada A record"}</Badge>
+            )}
+          </div>
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-xs">
+            <p className="font-semibold">Cara mengubah di Hostinger (hPanel):</p>
+            <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+              <li>Buka <b>hPanel → Domains → {apiDomain.split(".").slice(-2).join(".")} → DNS / Name Servers → DNS Records</b>.</li>
+              <li>Cari record <b>A</b> dengan nama <code className="font-mono">{apiDomain.split(".")[0]}</code> — hapus record lama (saat ini mengarah ke IP lain).</li>
+              <li>Tambah record baru: <b>Type: A</b>, <b>Name: <code className="font-mono">{apiDomain.split(".")[0]}</code></b>, <b>Points to: <code className="font-mono">{cfg.vps_host || "187.53.142.102"}</code></b>, <b>TTL: 300</b>.</li>
+              <li>Kalau ada record <b>AAAA</b> (IPv6) atau <b>CNAME</b> untuk nama yang sama, hapus supaya tidak bentrok.</li>
+              <li>Tunggu propagasi 5–30 menit, lalu klik <b>Cek DNS Sekarang</b> di atas sampai muncul badge hijau.</li>
+              <li>Setelah hijau, pasang SSL di VPS: <code className="font-mono">certbot --nginx -d {apiDomain.trim() || "api.husada.com"}</code> (atau via Caddy otomatis).</li>
+            </ol>
+            <p className="text-muted-foreground">Perubahan DNS hanya bisa dilakukan dari akun Hostinger kamu — sistem tidak punya akses ke DNS registrar.</p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ---- Konfigurasi VPS ---- */}
       <Card>
         <CardHeader>
