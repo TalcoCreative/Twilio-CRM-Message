@@ -899,8 +899,8 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
           ) : (
             <>
               <header className="px-4 py-3 border-b bg-card/80 backdrop-blur">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex-1 min-w-56">
                     <button className="md:hidden text-xs text-primary mb-1" onClick={() => setActiveId(null)}>← Kembali</button>
                     {editingName ? (
                       <input
