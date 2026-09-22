@@ -259,6 +259,42 @@ Deno.serve(async (req) => {
   }
 });
 
+// ---------- webinar auto-reply ----------
+async function handleWebinarCode(admin: any, contact: any, message: string, convId: string, cfg: any): Promise<boolean> {
+  const { data: webinars } = await admin.from("webinars").select("*").eq("is_active", true);
+  if (!webinars?.length) return false;
+
+  const upperMsg = message.toUpperCase();
+  let hit: any = null;
+  for (const w of webinars) {
+    const raw = String(w.code || "").trim().toUpperCase();
+    if (!raw) continue;
+    const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(^|[^A-Z0-9])${escaped}([^A-Z0-9]|$)`);
+    if (re.test(upperMsg)) { hit = w; break; }
+  }
+  if (!hit) return false;
+
+  const text = String(hit.message_template || "")
+    .replaceAll("{{link}}", String(hit.zoom_link || ""))
+    .replaceAll("{{webinar}}", String(hit.name || ""))
+    .replaceAll("{{nama}}", String(contact.full_name || ""))
+    .replaceAll("{{kode}}", String(hit.code || ""));
+
+  await sendReply(admin, contact, convId, text, cfg);
+
+  await admin.from("webinar_registrations").insert({
+    webinar_id: hit.id, contact_id: contact.id, conversation_id: convId,
+    code_used: hit.code, message_sent: text,
+  });
+
+  if (hit.stop_chatbot) {
+    await admin.from("contacts").update({ chatbot_state: "done" }).eq("id", contact.id);
+    contact.chatbot_state = "done";
+  }
+  return true;
+}
+
 // ---------- chatbot workflow (unchanged behavior, uses Twilio for replies) ----------
 async function runWorkflow(admin: any, contact: any, message: string, convId: string, workflowId: string, cfg: any) {
   const { data: wf } = await admin.from("workflows").select("id,status,is_enabled").eq("id", workflowId).maybeSingle();
