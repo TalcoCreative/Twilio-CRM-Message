@@ -244,7 +244,10 @@ Deno.serve(async (req) => {
     }).eq("id", contact.id);
     if (contactUpdateError) throw contactUpdateError;
 
-    if (contact.chatbot_state !== "done" && activeWorkflowId && message) {
+    // Webinar codes take priority over the normal chatbot workflow.
+    const webinarHandled = message ? await handleWebinarCode(admin, contact, message, conv.id, cfg) : false;
+
+    if (!webinarHandled && contact.chatbot_state !== "done" && activeWorkflowId && message) {
       await runWorkflow(admin, contact, message, conv.id, activeWorkflowId, cfg);
     }
 
