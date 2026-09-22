@@ -189,7 +189,7 @@ const MODES = [
 /** Panel konfigurasi + tutorial mirroring database ke VPS sendiri. */
 export function VpsMirrorPanel() {
   const [cfg, setCfg] = useState<VpsCfg>({
-    vps_host: "", vps_ssh_user: "root", vps_pg_port: "5432",
+    vps_host: "187.53.142.102", vps_ssh_user: "root", vps_pg_port: "5432",
     vps_pg_db: "husada", vps_pg_user: "husada", vps_api_url: "", vps_anon_key: "",
     vps_mirror_enabled: "false", vps_last_sync_at: "", data_backend_mode: "cloud",
   });
