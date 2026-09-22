@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { WorkflowBuilderTab } from "@/components/workflow-builder";
 import { FRWeeklySchedule } from "@/components/fr-weekly-schedule";
 import { DeveloperModeGate, VpsMirrorPanel, InboxExportPanel } from "@/components/developer-mode";
+import { WebinarTab } from "@/components/webinar-settings";
 
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({ meta: [{ title: "Settings — Husada CRM" }] }),
@@ -35,6 +36,7 @@ function SettingsPage() {
     { v: "stages", label: "Stages Pipeline" },
     { v: "flow", label: "Bot Workflow" },
     { v: "categories", label: "Kategori Pertanyaan" },
+    { v: "webinar", label: "Webinar" },
     { v: "quick", label: "Quick Replies" },
     { v: "products", label: "Produk" },
     { v: "team", label: "Tim Agent" },
@@ -70,6 +72,7 @@ function SettingsPage() {
         {tab === "stages" && <WorkflowTab />}
         {tab === "flow" && <WorkflowBuilderTab />}
         {tab === "categories" && <CategoriesTab />}
+        {tab === "webinar" && <WebinarTab />}
         {tab === "quick" && <QuickRepliesTab />}
         {tab === "products" && <ProductsTab />}
         {tab === "team" && <TeamTab />}
