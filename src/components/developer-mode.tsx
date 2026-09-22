@@ -202,6 +202,27 @@ export function VpsMirrorPanel() {
   const [dbUrl, setDbUrl] = useState<string | null>(null);
   const [dbUrlVisible, setDbUrlVisible] = useState(false);
   const [dbUrlLoading, setDbUrlLoading] = useState(false);
+  const [apiDomain, setApiDomain] = useState(() => localStorage.getItem("husada_api_domain") || "api.husada.com");
+  const [dnsChecking, setDnsChecking] = useState(false);
+  const [dnsResult, setDnsResult] = useState<{ ips: string[]; ok: boolean } | null>(null);
+  const checkDns = async () => {
+    const d = apiDomain.trim().toLowerCase();
+    if (!d) return;
+    localStorage.setItem("husada_api_domain", d);
+    setDnsChecking(true);
+    try {
+      const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(d)}&type=A`);
+      const json = await res.json();
+      const ips: string[] = (json?.Answer || []).filter((a: any) => a.type === 1).map((a: any) => String(a.data));
+      const target = (cfg.vps_host || "").trim();
+      setDnsResult({ ips, ok: !!target && ips.includes(target) });
+    } catch {
+      setDnsResult({ ips: [], ok: false });
+      toast.error("Gagal cek DNS — coba lagi");
+    } finally {
+      setDnsChecking(false);
+    }
+  };
 
   async function revealDbUrl() {
     if (dbUrl) { setDbUrlVisible((v) => !v); return; }
