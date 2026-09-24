@@ -1256,6 +1256,15 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
               </div>
 
+              {webinarLocked ? (
+                <div className="border-t p-3 bg-card">
+                  <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                    <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                    <div><div className="font-medium">Chat pendaftar webinar — terkunci untuk First Response</div>
+                    <div className="opacity-80">Hanya Agent/Admin yang bisa membalas chat ini.</div></div>
+                  </div>
+                </div>
+              ) : (
               <form onSubmit={(e) => { e.preventDefault(); if (!windowClosed || mode === "note") sendMessage(); }} className="border-t p-2 md:p-3 bg-card space-y-2">
                 {windowClosed && mode === "reply" && (
                   <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-800 dark:text-amber-200">
@@ -1400,6 +1409,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   </Button>
                 </div>
               </form>
+              )}
             </>
           )}
         </div>
