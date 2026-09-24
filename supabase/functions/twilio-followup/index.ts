@@ -30,6 +30,10 @@ Deno.serve(async (req) => {
     if (!conversation_id) return jsonResponse({ success: false, error: "conversation_id required" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    {
+      const { data: locked } = await admin.rpc("fr_webinar_locked", { _user_id: user.id, _conv_id: conversation_id });
+      if (locked) return jsonResponse({ success: false, error: "Chat pendaftar webinar hanya bisa dibalas oleh Agent. First Response tidak diizinkan mengirim pesan." }, 403);
+    }
     const cfg = await loadTwilioConfig(admin);
     const cfgErr = validateConfig(cfg, { requireFrom: true });
     if (cfgErr) return jsonResponse({ success: false, error: cfgErr }, 500);

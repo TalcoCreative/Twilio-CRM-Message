@@ -20,6 +20,7 @@ import { Plus, Trash2, Megaphone, Trophy, Copy, ExternalLink, Sparkles, Calendar
 import { toast } from "sonner";
 import { LEAD_TEMPERATURES, TEMP_NONE_COLOR, TEMP_NONE_LABEL, tempDistribution } from "@/lib/lead-temperature";
 import * as XLSX from "xlsx";
+import { WebinarStats } from "@/components/webinar-stats";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
   AreaChart, Area, PieChart, Pie, Legend, ComposedChart, Line,
@@ -550,6 +551,8 @@ function AdsContentPage() {
       {/* Semua infografis menurun (tanpa tabs) */}
 
       {/* Winning Content (Top 10) */}
+      <WebinarStats from={from} to={to} />
+
       <Card className="glow-soft">
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2"><Trophy className="size-4 text-amber-500" /> Winning Content (Top 10 Kode)</CardTitle>

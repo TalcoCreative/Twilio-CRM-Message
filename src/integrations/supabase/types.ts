@@ -997,6 +997,10 @@ export type Database = {
       }
       fr_can_see_contact: { Args: { _contact_id: string }; Returns: boolean }
       fr_can_see_conversation: { Args: { _conv_id: string }; Returns: boolean }
+      fr_webinar_locked: {
+        Args: { _conv_id: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1006,6 +1010,7 @@ export type Database = {
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_fr_restricted: { Args: never; Returns: boolean }
+      is_webinar_conversation: { Args: { _conv_id: string }; Returns: boolean }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
