@@ -328,6 +328,16 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   }
 
   const active = conversations.find((c) => c.id === activeId);
+  const [webinarLocked, setWebinarLocked] = useState(false);
+  useEffect(() => {
+    setWebinarLocked(false);
+    if (!activeId || !isFirstResponse) return;
+    let cancelled = false;
+    supabase.rpc("is_webinar_conversation" as any, { _conv_id: activeId }).then(({ data }) => {
+      if (!cancelled) setWebinarLocked(!!data);
+    });
+    return () => { cancelled = true; };
+  }, [activeId, isFirstResponse]);
   const activeProductName = active?.contact?.interested_product_id
     ? products.find((p) => p.id === active.contact?.interested_product_id)?.name : null;
 
