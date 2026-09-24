@@ -64,6 +64,10 @@ Deno.serve(async (req) => {
       toNumber = conv.contact?.whatsapp_number;
     }
     if (!toNumber) return jsonResponse({ success: false, error: "target number required" }, 400);
+    if (!is_test && convId) {
+      const { data: locked } = await admin.rpc("fr_webinar_locked", { _user_id: user.id, _conv_id: convId });
+      if (locked) return jsonResponse({ success: false, error: "Chat pendaftar webinar hanya bisa dibalas oleh Agent. First Response tidak diizinkan mengirim pesan." }, 403);
+    }
 
     // Signed URL for attachment (Twilio needs a publicly reachable URL)
     let mediaUrl: string | null = null;
