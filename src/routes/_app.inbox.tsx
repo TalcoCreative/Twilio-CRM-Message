@@ -285,6 +285,22 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const [filterStageId, setFilterStageId] = useState<string>("__all__");
   const [filterAgentId, setFilterAgentId] = useState<string>("__all__");
   const [filterTemp, setFilterTemp] = useState<string>("__all__");
+  const [filterWebinar, setFilterWebinar] = useState(false);
+  const [webinarIds, setWebinarIds] = useState<{ contacts: Set<string>; convs: Set<string> }>({ contacts: new Set(), convs: new Set() });
+  useEffect(() => {
+    let alive = true;
+    const loadW = async () => {
+      const { data } = await supabase.from("webinar_registrations").select("contact_id, conversation_id");
+      if (!alive) return;
+      const contacts = new Set<string>(), convs = new Set<string>();
+      (data || []).forEach((r: any) => { if (r.contact_id) contacts.add(r.contact_id); if (r.conversation_id) convs.add(r.conversation_id); });
+      setWebinarIds({ contacts, convs });
+    };
+    loadW();
+    const t = setInterval(loadW, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const isWebinarConv = (c: Conversation) => webinarIds.convs.has(c.id) || webinarIds.contacts.has(c.contact_id);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -293,6 +309,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       c.contact?.whatsapp_number?.includes(q));
     if (filterUnread) list = list.filter((c) => (c.unread_count || 0) > 0);
     if (filterUnassigned) list = list.filter((c) => !c.assigned_agent_id);
+    if (filterWebinar) list = list.filter((c) => webinarIds.convs.has(c.id) || webinarIds.contacts.has(c.contact_id));
     if (filterStageId !== "__all__") {
       list = list.filter((c) => (c.contact?.stage_id || "__none__") === filterStageId);
     }
@@ -314,7 +331,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       }
     });
     return list;
-  }, [conversations, search, filterUnread, filterUnassigned, filterStageId, filterAgentId, filterTemp, sortBy]);
+  }, [conversations, search, filterUnread, filterUnassigned, filterWebinar, webinarIds, filterStageId, filterAgentId, filterTemp, sortBy]);
 
   // SLA badge color based on minutes since last inbound when unread
   function slaTone(c: Conversation): "ok" | "warn" | "danger" | null {
@@ -776,6 +793,11 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   filterUnassigned ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-accent")}>
                 Belum assign
               </button>
+              <button onClick={() => setFilterWebinar((v) => !v)}
+                className={cn("text-[10px] px-2 py-1 rounded-md border transition-colors font-semibold",
+                  filterWebinar ? "bg-blue-600 text-white border-blue-600" : "bg-card text-blue-700 dark:text-blue-300 hover:bg-accent")}>
+                Webinar
+              </button>
             </div>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               <Select value={filterStageId} onValueChange={setFilterStageId}>
@@ -873,6 +895,11 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                       <span className="text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1"
                         style={{ backgroundColor: tempColor(c.contact.lead_temperature) + "22", color: tempColor(c.contact.lead_temperature) }}>
                         <Flame className="size-2.5" /> {tempLabel(c.contact.lead_temperature)}
+                      </span>
+                    )}
+                    {isWebinarConv(c) && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-blue-600 text-white inline-flex items-center gap-1">
+                        <Video className="size-2.5" /> WEBINAR
                       </span>
                     )}
                     {stage && (
@@ -1281,11 +1308,13 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         {sendingFollowUp === "regular" ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
                         Follow Up Regular
                       </Button>
+                      {!isFirstResponse && (
                       <Button type="button" size="sm" onClick={() => sendFollowUp("rezum")} disabled={sendingFollowUp !== null}
                         className="h-8 bg-amber-600 hover:bg-amber-700 text-white">
                         {sendingFollowUp === "rezum" ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
                         Follow Up Rezum
                       </Button>
+                      )}
                     </div>
                   </div>
                 )}
