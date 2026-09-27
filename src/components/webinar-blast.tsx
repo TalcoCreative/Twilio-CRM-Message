@@ -138,7 +138,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium mr-auto">Blasting Undangan (Template Webinar)</p>
         <Badge variant="secondary">Total {stats.total}</Badge>
-        <Badge variant="secondary">Belum pernah chat {stats.fresh}</Badge>
+        <Badge variant="secondary">Belum ada di Chatbox {stats.fresh}</Badge>
         <Badge>Terkirim {stats.sent}</Badge>
         {stats.failed > 0 && <Badge variant="destructive">Gagal {stats.failed}</Badge>}
       </div>
