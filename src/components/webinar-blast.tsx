@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Send, Trash2, UserPlus } from "lucide-react";
+import { Loader2, Send, Trash2, UserPlus, Download, Upload } from "lucide-react";
+import * as XLSX from "xlsx";
 
 type Recipient = {
   id: string; whatsapp_number: string; full_name: string | null;
@@ -42,9 +43,16 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   useEffect(() => { load(); }, [webinarId]);
 
   async function addRows(items: { phone: string; name: string }[]) {
-    const clean = items.map((i) => ({ whatsapp_number: normalizeWa(i.phone), full_name: i.name.trim() || null }))
+    const all = items.map((i) => ({ whatsapp_number: normalizeWa(i.phone), full_name: String(i.name || "").trim() || null }))
       .filter((i) => i.whatsapp_number);
+    // Hapus duplikat dalam file (yang pertama dipertahankan)
+    const seen = new Set<string>();
+    const clean = all.filter((i) => (seen.has(i.whatsapp_number) ? false : (seen.add(i.whatsapp_number), true)));
+    const dupInFile = all.length - clean.length;
     if (!clean.length) return toast.error("Tidak ada nomor valid");
+    const existing = new Set(rows.map((r) => r.whatsapp_number));
+    const fresh = clean.filter((c) => !existing.has(c.whatsapp_number));
+    const dupInList = clean.length - fresh.length;
     setBusy(true);
     const { error } = await supabase.from("webinar_blast_recipients" as any).upsert(
       clean.map((c) => ({ ...c, webinar_id: webinarId })) as any,
@@ -52,7 +60,8 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
     );
     setBusy(false);
     if (error) return toast.error(error.message);
-    toast.success(`${clean.length} nomor disimpan`);
+    const dup = dupInFile + dupInList;
+    toast.success(`${fresh.length} nomor baru ditambahkan${dup ? `, ${dup} nomor ganda dilewati` : ""}`);
     setPhone(""); setName(""); setBulk("");
     load();
   }
@@ -63,6 +72,31 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
       return { phone: p || "", name: rest.join(" ").trim() };
     });
     addRows(items);
+  }
+
+  function downloadTemplate() {
+    const ws = XLSX.utils.aoa_to_sheet([["Nomor WA", "Nama"], ["081234567890", "Budi"], ["6285678901234", "Siti"]]);
+    ws["!cols"] = [{ wch: 20 }, { wch: 30 }];
+    ws["A2"].t = "s"; ws["A3"].t = "s";
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Daftar Nomor");
+    XLSX.writeFile(wb, "template-blast-webinar.xlsx");
+  }
+
+  async function importFile(file: File) {
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: false, defval: "" });
+      const items = data
+        .filter((r, i) => !(i === 0 && /nomor|phone|wa/i.test(String(r[0]))))
+        .map((r) => ({ phone: String(r[0] ?? ""), name: String(r[1] ?? "") }))
+        .filter((r) => r.phone.trim());
+      if (!items.length) return toast.error("File kosong atau tidak sesuai template");
+      await addRows(items);
+    } catch (e: any) {
+      toast.error("Gagal membaca file: " + (e?.message || ""));
+    }
   }
 
   async function removeSelected() {
@@ -104,7 +138,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium mr-auto">Blasting Undangan (Template Webinar)</p>
         <Badge variant="secondary">Total {stats.total}</Badge>
-        <Badge variant="secondary">Belum pernah chat {stats.fresh}</Badge>
+        <Badge variant="secondary">Belum ada di Chatbox {stats.fresh}</Badge>
         <Badge>Terkirim {stats.sent}</Badge>
         {stats.failed > 0 && <Badge variant="destructive">Gagal {stats.failed}</Badge>}
       </div>
@@ -122,7 +156,19 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
       <div className="space-y-2">
         <Textarea rows={3} value={bulk} onChange={(e) => setBulk(e.target.value)}
           placeholder={"Tempel banyak sekaligus, satu per baris:\n08123456789, Budi\n08567890123, Siti"} className="text-xs" />
-        <Button variant="outline" size="sm" onClick={addBulk} disabled={busy || !bulk.trim()}>Simpan Daftar</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={addBulk} disabled={busy || !bulk.trim()}>Simpan Daftar</Button>
+          <Button variant="outline" size="sm" onClick={downloadTemplate}>
+            <Download className="h-4 w-4 mr-1" /> Download Template
+          </Button>
+          <Button variant="outline" size="sm" disabled={busy} asChild>
+            <label className="cursor-pointer">
+              <Upload className="h-4 w-4 mr-1" /> Import Excel/CSV
+              <input type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ""; }} />
+            </label>
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -152,11 +198,12 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
             }} />
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{r.full_name || "(tanpa nama)"}</div>
-              <div className="text-xs text-muted-foreground">
-                {r.whatsapp_number} · {chatted.has(r.whatsapp_number) ? "sudah pernah chat" : "belum pernah chat"}
-              </div>
+              <div className="text-xs text-muted-foreground">{r.whatsapp_number}</div>
               {r.last_error && <div className="text-xs text-destructive truncate">{r.last_error}</div>}
             </div>
+            {chatted.has(r.whatsapp_number)
+              ? <Badge variant="outline">Sudah ada di Chatbox</Badge>
+              : <Badge variant="secondary">Belum ada di Chatbox</Badge>}
             {r.last_status === "sent" && <Badge>Terkirim{r.send_count > 1 ? ` ×${r.send_count}` : ""}</Badge>}
             {r.last_status === "failed" && <Badge variant="destructive">Gagal</Badge>}
           </label>
