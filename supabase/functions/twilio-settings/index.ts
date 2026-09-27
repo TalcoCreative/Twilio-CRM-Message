@@ -39,6 +39,7 @@ Deno.serve(async (req) => {
       content_sid_agent_assignment: "twilio_content_sid_agent_assignment",
       content_sid_lead_invitation: "twilio_content_sid_lead_invitation",
       content_sid_lead_follow_up: "twilio_content_sid_lead_follow_up",
+      content_sid_rezum_registration: "twilio_content_sid_rezum_registration",
     };
 
     // Disconnect: all credentials empty AND no content sid fields → wipe settings

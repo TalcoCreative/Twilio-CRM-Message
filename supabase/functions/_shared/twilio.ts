@@ -172,6 +172,7 @@ export type ContentSids = {
   agent_assignment: string;
   lead_invitation: string;
   lead_follow_up: string;
+  rezum_registration: string;
 };
 
 export async function loadContentSids(admin: SupabaseClient): Promise<ContentSids> {
@@ -179,6 +180,7 @@ export async function loadContentSids(admin: SupabaseClient): Promise<ContentSid
     "twilio_content_sid_agent_assignment",
     "twilio_content_sid_lead_invitation",
     "twilio_content_sid_lead_follow_up",
+    "twilio_content_sid_rezum_registration",
   ]);
   const m: Record<string, string> = {};
   (data || []).forEach((r: any) => { m[r.key] = r.value; });
@@ -186,6 +188,7 @@ export async function loadContentSids(admin: SupabaseClient): Promise<ContentSid
     agent_assignment: m.twilio_content_sid_agent_assignment || "",
     lead_invitation: m.twilio_content_sid_lead_invitation || "",
     lead_follow_up: m.twilio_content_sid_lead_follow_up || "",
+    rezum_registration: m.twilio_content_sid_rezum_registration || "",
   };
 }
 
