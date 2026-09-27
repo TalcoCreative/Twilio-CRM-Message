@@ -961,7 +961,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   <div className="hidden xl:flex items-center gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5">
                       <Tag className="size-3.5 text-muted-foreground" />
-                      <Select value={active.contact?.stage_id || ""} onValueChange={changeStage}>
+                      <Select disabled={webinarLocked} value={active.contact?.stage_id || ""} onValueChange={changeStage}>
                         <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue placeholder="Stage" /></SelectTrigger>
                         <SelectContent>
                           {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
@@ -970,7 +970,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Flame className="size-3.5 text-muted-foreground" />
-                      <Select value={active.contact?.lead_temperature || "none"}
+                      <Select disabled={webinarLocked} value={active.contact?.lead_temperature || "none"}
                         onValueChange={(v) => changeTemperature(v === "none" ? null : v)}>
                         <SelectTrigger className="h-8 w-[130px] text-xs">
                           <SelectValue placeholder="Prioritas" />
@@ -990,7 +990,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Package className="size-3.5 text-muted-foreground" />
-                      <Select value={active.contact?.interested_product_id || "none"}
+                      <Select disabled={webinarLocked} value={active.contact?.interested_product_id || "none"}
                         onValueChange={(v) => changeProduct(v === "none" ? null : v)}>
                         <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue placeholder="Produk" /></SelectTrigger>
                         <SelectContent>
@@ -1001,7 +1001,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <UserIcon className="size-3.5 text-muted-foreground" />
-                      <Select value={active.assigned_agent_id || "unassigned"}
+                      <Select disabled={webinarLocked} value={active.assigned_agent_id || "unassigned"}
                         onValueChange={(v) => assignAgent(v === "unassigned" ? null : v)}>
                         <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue placeholder="Agent" /></SelectTrigger>
                         <SelectContent>
@@ -1059,7 +1059,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
                           <Tag className="size-3" /> Stage
                         </div>
-                        <Select value={active.contact?.stage_id || ""} onValueChange={changeStage}>
+                        <Select disabled={webinarLocked} value={active.contact?.stage_id || ""} onValueChange={changeStage}>
                           <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Pilih stage" /></SelectTrigger>
                           <SelectContent>
                             {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
@@ -1070,7 +1070,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
                           <Flame className="size-3" /> Prioritas lead
                         </div>
-                        <Select value={active.contact?.lead_temperature || "none"}
+                        <Select disabled={webinarLocked} value={active.contact?.lead_temperature || "none"}
                           onValueChange={(v) => changeTemperature(v === "none" ? null : v)}>
                           <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Pilih prioritas" /></SelectTrigger>
                           <SelectContent>
@@ -1085,7 +1085,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
                           <Package className="size-3" /> Produk
                         </div>
-                        <Select value={active.contact?.interested_product_id || "none"}
+                        <Select disabled={webinarLocked} value={active.contact?.interested_product_id || "none"}
                           onValueChange={(v) => changeProduct(v === "none" ? null : v)}>
                           <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Pilih produk" /></SelectTrigger>
                           <SelectContent>
@@ -1098,7 +1098,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
                           <UserIcon className="size-3" /> Tugaskan agent
                         </div>
-                        <Select value={active.assigned_agent_id || "unassigned"}
+                        <Select disabled={webinarLocked} value={active.assigned_agent_id || "unassigned"}
                           onValueChange={(v) => assignAgent(v === "unassigned" ? null : v)}>
                           <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
