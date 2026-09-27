@@ -350,28 +350,28 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     return null;
   }, [messages]);
   const windowClosed = activeId != null && (lastInboundAt == null || (Date.now() - lastInboundAt) > 24 * 60 * 60 * 1000);
-  const [sendingFollowUp, setSendingFollowUp] = useState(false);
+  const [sendingFollowUp, setSendingFollowUp] = useState<"regular" | "rezum" | null>(null);
 
-  async function sendFollowUp() {
+  async function sendFollowUp(templateType: "regular" | "rezum") {
     if (!activeId) return;
-    setSendingFollowUp(true);
+    setSendingFollowUp(templateType);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/twilio-followup`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ conversation_id: activeId }),
+        body: JSON.stringify({ conversation_id: activeId, template_type: templateType }),
       });
       const j = await res.json();
       if (!res.ok || !j.ok) {
         toast.error(j.twilio_message || j.error || "Gagal kirim Follow Up");
         return;
       }
-      toast.success("Template Follow Up terkirim");
+      toast.success(templateType === "rezum" ? "Follow Up Rezum terkirim" : "Follow Up Regular terkirim");
     } catch (e: any) {
       toast.error(e?.message || String(e));
     } finally {
-      setSendingFollowUp(false);
+      setSendingFollowUp(null);
     }
   }
 
@@ -1275,11 +1275,18 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         Pesan freeform tidak dapat dikirim. Gunakan tombol Follow Up untuk mengirim template Twilio yang sudah disetujui.
                       </div>
                     </div>
-                    <Button type="button" size="sm" onClick={sendFollowUp} disabled={sendingFollowUp}
-                      className="h-8 shrink-0 bg-amber-600 hover:bg-amber-700 text-white">
-                      {sendingFollowUp ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
-                      Follow Up
-                    </Button>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                      <Button type="button" size="sm" variant="outline" onClick={() => sendFollowUp("regular")} disabled={sendingFollowUp !== null}
+                        className="h-8 border-amber-600 text-amber-800 dark:text-amber-200">
+                        {sendingFollowUp === "regular" ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
+                        Follow Up Regular
+                      </Button>
+                      <Button type="button" size="sm" onClick={() => sendFollowUp("rezum")} disabled={sendingFollowUp !== null}
+                        className="h-8 bg-amber-600 hover:bg-amber-700 text-white">
+                        {sendingFollowUp === "rezum" ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
+                        Follow Up Rezum
+                      </Button>
+                    </div>
                   </div>
                 )}
                 {/* Row 1: mode toggle + quick replies + attachments */}

@@ -26,8 +26,15 @@ Deno.serve(async (req) => {
     if (!user) return jsonResponse({ success: false, error: "Unauthorized" }, 401);
 
     const body = await req.json();
-    const { conversation_id } = body as { conversation_id?: string };
+    const { conversation_id, template_type } = body as {
+      conversation_id?: string;
+      template_type?: "regular" | "rezum";
+    };
     if (!conversation_id) return jsonResponse({ success: false, error: "conversation_id required" }, 400);
+    if (template_type && template_type !== "regular" && template_type !== "rezum") {
+      return jsonResponse({ success: false, error: "template_type tidak valid" }, 400);
+    }
+    const selectedType = template_type === "rezum" ? "rezum" : "regular";
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
     {
@@ -39,8 +46,10 @@ Deno.serve(async (req) => {
     if (cfgErr) return jsonResponse({ success: false, error: cfgErr }, 500);
 
     const sids = await loadContentSids(admin);
-    if (!sids.lead_follow_up) {
-      const msg = `Content SID untuk "Lead Follow Up" belum dikonfigurasi pada WhatsApp Gateway.`;
+    const contentSid = selectedType === "rezum" ? sids.rezum_registration : sids.lead_follow_up;
+    const templateLabel = selectedType === "rezum" ? "Follow Up Rezum Pendaftaran" : "Follow Up Regular";
+    if (!contentSid) {
+      const msg = `Content SID untuk "${templateLabel}" belum dikonfigurasi pada WhatsApp Gateway.`;
       await admin.from("whatsapp_gateway_logs").insert({
         direction: "OUTBOUND", level: "error", event: "followup",
         conversation_id, status: "config_missing", error_message: msg,
@@ -56,13 +65,12 @@ Deno.serve(async (req) => {
     const toNumber = c.whatsapp_number;
     if (!toNumber) return jsonResponse({ success: false, error: "Kontak tidak memiliki nomor WhatsApp" }, 400);
 
-    const contentVariables = normalizeContentVars({
-      "1": c.full_name || "",
-      "2": c.product?.name || "",
-    });
+    const contentVariables = selectedType === "rezum"
+      ? normalizeContentVars({ "1": c.full_name || "Pasien" })
+      : normalizeContentVars({ "1": c.full_name || "", "2": c.product?.name || "" });
 
     const send = await twilioSendContentTemplate(cfg, {
-      to: toNumber, contentSid: sids.lead_follow_up, contentVariables,
+      to: toNumber, contentSid, contentVariables,
     });
 
     if (!send.ok) {
@@ -72,7 +80,7 @@ Deno.serve(async (req) => {
         status: String(send.status || ""),
         error_code: send.errorCode ? String(send.errorCode) : null,
         error_message: send.errorMessage || null,
-        payload: { content_sid: sids.lead_follow_up, variables: contentVariables, raw: send.raw } as any,
+        payload: { content_sid: contentSid, template_type: selectedType, variables: contentVariables, raw: send.raw } as any,
       });
       return jsonResponse({
         success: false, ok: false, twilio_code: send.errorCode,
@@ -84,7 +92,7 @@ Deno.serve(async (req) => {
     // API Key auth often lacks Content API scope → try that first, fall back to Account SID + Auth Token.
     let renderedBody = "";
     try {
-      const url = `https://content.twilio.com/v1/Content/${encodeURIComponent(sids.lead_follow_up)}`;
+      const url = `https://content.twilio.com/v1/Content/${encodeURIComponent(contentSid)}`;
       const tryFetch = (auth: string) => fetch(url, { headers: { Authorization: auth } });
       let cRes = await tryFetch(basicAuthHeader(cfg));
       if (!cRes.ok && cfg.accountSid && cfg.authToken) {
@@ -107,9 +115,33 @@ Deno.serve(async (req) => {
       console.warn("[twilio-followup] fetch content template failed", e);
     }
     if (!renderedBody) {
-      // Fallback: render variables inline so agent still sees something meaningful
-      const vars = Object.keys(contentVariables).sort().map((k) => contentVariables[k]).filter(Boolean).join(" • ");
-      renderedBody = vars ? `[Follow Up] ${vars}` : `[Follow Up] ${c.full_name || ""}`.trim();
+      if (selectedType === "rezum") {
+        renderedBody = `Halo ${contentVariables["1"]} 👋
+
+Karena sebelumnya kamu pernah menghubungi RS Husada terkait layanan kesehatan prostat, kami ingin mengundang kamu untuk mengikuti webinar GRATIS:
+
+“Bahaya Prostat: Jangan Abaikan Gejalanya”
+
+📅 Jumat, 9 Oktober 2026
+🕘 09.30–11.30 WIB
+💻 Online via Zoom — GRATIS
+
+Bersama Dokter Spesialis Urologi RS Husada:
+👨‍⚕️ dr. Egi Edward Manuputty, Sp.U
+👨‍⚕️ dr. Yulius Fajar, Sp.U
+
+Kamu bisa mendapatkan edukasi seputar gejala prostat, pemeriksaan, pilihan penanganan, serta mengikuti sesi tanya jawab bersama dokter.
+
+Daftar GRATIS di sini:
+https://husadarezum.lynk.id/
+
+Setelah mendaftar, link Zoom akan dikirimkan melalui WhatsApp.
+
+Sampai bertemu di Webinar RS Husada 🙏`;
+      } else {
+        const vars = Object.keys(contentVariables).sort().map((k) => contentVariables[k]).filter(Boolean).join(" • ");
+        renderedBody = vars ? `[Follow Up] ${vars}` : `[Follow Up] ${c.full_name || ""}`.trim();
+      }
     }
 
 
@@ -126,7 +158,7 @@ Deno.serve(async (req) => {
       direction: "OUTBOUND", level: "info", event: "followup",
       message_sid: send.sid || null, conversation_id, to_number: toNumber,
       status: "sent",
-      payload: { content_sid: sids.lead_follow_up, variables: contentVariables, body: renderedBody } as any,
+      payload: { content_sid: contentSid, template_type: selectedType, variables: contentVariables, body: renderedBody } as any,
     });
 
     await admin.from("conversations").update({
@@ -137,7 +169,7 @@ Deno.serve(async (req) => {
 
     return jsonResponse({
       success: true, ok: true, sid: send.sid,
-      content_sid: sids.lead_follow_up, message: msg, insert_error: insErr?.message || null,
+      content_sid: contentSid, template_type: selectedType, message: msg, insert_error: insErr?.message || null,
     });
   } catch (e) {
     console.error("[twilio-followup] fatal", e);
