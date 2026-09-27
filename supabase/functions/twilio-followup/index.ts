@@ -41,6 +41,16 @@ Deno.serve(async (req) => {
       const { data: locked } = await admin.rpc("fr_webinar_locked", { _user_id: user.id, _conv_id: conversation_id });
       if (locked) return jsonResponse({ success: false, error: "Chat pendaftar webinar hanya bisa dibalas oleh Agent. First Response tidak diizinkan mengirim pesan." }, 403);
     }
+    if (selectedType === "rezum") {
+      const [{ data: isFr }, { data: isAgent }, { data: isAdm }] = await Promise.all([
+        admin.rpc("has_role", { _user_id: user.id, _role: "first_response" }),
+        admin.rpc("has_role", { _user_id: user.id, _role: "agent" }),
+        admin.rpc("is_admin", { _user_id: user.id }),
+      ]);
+      if (isFr && !isAgent && !isAdm) {
+        return jsonResponse({ success: false, error: "Follow Up Rezum (webinar) hanya bisa dikirim oleh Agent/Admin." }, 403);
+      }
+    }
     const cfg = await loadTwilioConfig(admin);
     const cfgErr = validateConfig(cfg, { requireFrom: true });
     if (cfgErr) return jsonResponse({ success: false, error: cfgErr }, 500);

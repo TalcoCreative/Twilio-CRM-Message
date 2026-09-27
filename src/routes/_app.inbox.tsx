@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Send, Search, Loader2, User as UserIcon, Tag, Zap, FileText, MoreVertical, StickyNote, MessageSquare, Trash2, Package, Smartphone, MailOpen, Paperclip, Image as ImageIcon, Film, Mic, StopCircle, Sticker, File as FileIcon, Camera, AlertTriangle, Flame } from "lucide-react";
+import { Send, Search, Loader2, User as UserIcon, Tag, Zap, FileText, MoreVertical, StickyNote, MessageSquare, Trash2, Package, Smartphone, MailOpen, Paperclip, Image as ImageIcon, Film, Mic, StopCircle, Sticker, File as FileIcon, Camera, AlertTriangle, Flame, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -285,6 +285,22 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const [filterStageId, setFilterStageId] = useState<string>("__all__");
   const [filterAgentId, setFilterAgentId] = useState<string>("__all__");
   const [filterTemp, setFilterTemp] = useState<string>("__all__");
+  const [filterWebinar, setFilterWebinar] = useState(false);
+  const [webinarIds, setWebinarIds] = useState<{ contacts: Set<string>; convs: Set<string> }>({ contacts: new Set(), convs: new Set() });
+  useEffect(() => {
+    let alive = true;
+    const loadW = async () => {
+      const { data } = await supabase.from("webinar_registrations").select("contact_id, conversation_id");
+      if (!alive) return;
+      const contacts = new Set<string>(), convs = new Set<string>();
+      (data || []).forEach((r: any) => { if (r.contact_id) contacts.add(r.contact_id); if (r.conversation_id) convs.add(r.conversation_id); });
+      setWebinarIds({ contacts, convs });
+    };
+    loadW();
+    const t = setInterval(loadW, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const isWebinarConv = (c: Conversation) => webinarIds.convs.has(c.id) || webinarIds.contacts.has(c.contact_id);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -293,6 +309,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       c.contact?.whatsapp_number?.includes(q));
     if (filterUnread) list = list.filter((c) => (c.unread_count || 0) > 0);
     if (filterUnassigned) list = list.filter((c) => !c.assigned_agent_id);
+    if (filterWebinar) list = list.filter((c) => webinarIds.convs.has(c.id) || webinarIds.contacts.has(c.contact_id));
     if (filterStageId !== "__all__") {
       list = list.filter((c) => (c.contact?.stage_id || "__none__") === filterStageId);
     }
@@ -314,7 +331,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       }
     });
     return list;
-  }, [conversations, search, filterUnread, filterUnassigned, filterStageId, filterAgentId, filterTemp, sortBy]);
+  }, [conversations, search, filterUnread, filterUnassigned, filterWebinar, webinarIds, filterStageId, filterAgentId, filterTemp, sortBy]);
 
   // SLA badge color based on minutes since last inbound when unread
   function slaTone(c: Conversation): "ok" | "warn" | "danger" | null {
@@ -776,6 +793,11 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   filterUnassigned ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-accent")}>
                 Belum assign
               </button>
+              <button onClick={() => setFilterWebinar((v) => !v)}
+                className={cn("text-[10px] px-2 py-1 rounded-md border transition-colors font-semibold",
+                  filterWebinar ? "bg-blue-600 text-white border-blue-600" : "bg-card text-blue-700 dark:text-blue-300 hover:bg-accent")}>
+                Webinar
+              </button>
             </div>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               <Select value={filterStageId} onValueChange={setFilterStageId}>
@@ -875,6 +897,11 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <Flame className="size-2.5" /> {tempLabel(c.contact.lead_temperature)}
                       </span>
                     )}
+                    {isWebinarConv(c) && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-blue-600 text-white inline-flex items-center gap-1">
+                        <Video className="size-2.5" /> WEBINAR
+                      </span>
+                    )}
                     {stage && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                         style={{ backgroundColor: (stage.color || "#888") + "20", color: stage.color || "inherit" }}>
@@ -961,7 +988,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                   <div className="hidden xl:flex items-center gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5">
                       <Tag className="size-3.5 text-muted-foreground" />
-                      <Select value={active.contact?.stage_id || ""} onValueChange={changeStage}>
+                      <Select disabled={webinarLocked} value={active.contact?.stage_id || ""} onValueChange={changeStage}>
                         <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue placeholder="Stage" /></SelectTrigger>
                         <SelectContent>
                           {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
@@ -970,7 +997,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Flame className="size-3.5 text-muted-foreground" />
-                      <Select value={active.contact?.lead_temperature || "none"}
+                      <Select disabled={webinarLocked} value={active.contact?.lead_temperature || "none"}
                         onValueChange={(v) => changeTemperature(v === "none" ? null : v)}>
                         <SelectTrigger className="h-8 w-[130px] text-xs">
                           <SelectValue placeholder="Prioritas" />
@@ -990,7 +1017,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Package className="size-3.5 text-muted-foreground" />
-                      <Select value={active.contact?.interested_product_id || "none"}
+                      <Select disabled={webinarLocked} value={active.contact?.interested_product_id || "none"}
                         onValueChange={(v) => changeProduct(v === "none" ? null : v)}>
                         <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue placeholder="Produk" /></SelectTrigger>
                         <SelectContent>
@@ -1001,7 +1028,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <UserIcon className="size-3.5 text-muted-foreground" />
-                      <Select value={active.assigned_agent_id || "unassigned"}
+                      <Select disabled={webinarLocked} value={active.assigned_agent_id || "unassigned"}
                         onValueChange={(v) => assignAgent(v === "unassigned" ? null : v)}>
                         <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue placeholder="Agent" /></SelectTrigger>
                         <SelectContent>
@@ -1059,7 +1086,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
                           <Tag className="size-3" /> Stage
                         </div>
-                        <Select value={active.contact?.stage_id || ""} onValueChange={changeStage}>
+                        <Select disabled={webinarLocked} value={active.contact?.stage_id || ""} onValueChange={changeStage}>
                           <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Pilih stage" /></SelectTrigger>
                           <SelectContent>
                             {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
@@ -1070,7 +1097,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
                           <Flame className="size-3" /> Prioritas lead
                         </div>
-                        <Select value={active.contact?.lead_temperature || "none"}
+                        <Select disabled={webinarLocked} value={active.contact?.lead_temperature || "none"}
                           onValueChange={(v) => changeTemperature(v === "none" ? null : v)}>
                           <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Pilih prioritas" /></SelectTrigger>
                           <SelectContent>
@@ -1085,7 +1112,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
                           <Package className="size-3" /> Produk
                         </div>
-                        <Select value={active.contact?.interested_product_id || "none"}
+                        <Select disabled={webinarLocked} value={active.contact?.interested_product_id || "none"}
                           onValueChange={(v) => changeProduct(v === "none" ? null : v)}>
                           <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Pilih produk" /></SelectTrigger>
                           <SelectContent>
@@ -1098,7 +1125,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
                           <UserIcon className="size-3" /> Tugaskan agent
                         </div>
-                        <Select value={active.assigned_agent_id || "unassigned"}
+                        <Select disabled={webinarLocked} value={active.assigned_agent_id || "unassigned"}
                           onValueChange={(v) => assignAgent(v === "unassigned" ? null : v)}>
                           <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
@@ -1281,11 +1308,13 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                         {sendingFollowUp === "regular" ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
                         Follow Up Regular
                       </Button>
+                      {!isFirstResponse && (
                       <Button type="button" size="sm" onClick={() => sendFollowUp("rezum")} disabled={sendingFollowUp !== null}
                         className="h-8 bg-amber-600 hover:bg-amber-700 text-white">
                         {sendingFollowUp === "rezum" ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
                         Follow Up Rezum
                       </Button>
+                      )}
                     </div>
                   </div>
                 )}
