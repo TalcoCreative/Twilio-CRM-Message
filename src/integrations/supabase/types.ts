@@ -754,6 +754,73 @@ export type Database = {
         }
         Relationships: []
       }
+      webinar_blast_recipients: {
+        Row: {
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          last_error: string | null
+          last_sent_at: string | null
+          last_status: string | null
+          send_count: number
+          updated_at: string
+          webinar_id: string
+          whatsapp_number: string
+        }
+        Insert: {
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          last_error?: string | null
+          last_sent_at?: string | null
+          last_status?: string | null
+          send_count?: number
+          updated_at?: string
+          webinar_id: string
+          whatsapp_number: string
+        }
+        Update: {
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          last_error?: string | null
+          last_sent_at?: string | null
+          last_status?: string | null
+          send_count?: number
+          updated_at?: string
+          webinar_id?: string
+          whatsapp_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webinar_blast_recipients_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webinar_blast_recipients_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webinar_blast_recipients_webinar_id_fkey"
+            columns: ["webinar_id"]
+            isOneToOne: false
+            referencedRelation: "webinars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webinar_registrations: {
         Row: {
           code_used: string

@@ -332,6 +332,7 @@ function FonnteTab() {
   const [contentSidInvite, setContentSidInvite] = useState("");
   const [contentSidFollowUp, setContentSidFollowUp] = useState("");
   const [contentSidRezum, setContentSidRezum] = useState("HX18ee54168a8e79ef4693be0774ddcee8");
+  const [contentSidWebinar, setContentSidWebinar] = useState("HX41f89191c36c51415223e2ba7c27429a");
   const [savingTemplates, setSavingTemplates] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -348,7 +349,7 @@ function FonnteTab() {
         "twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from",
         "twilio_messaging_service_sid", "twilio_api_key_sid", "twilio_api_key_secret",
         "twilio_content_sid_agent_assignment", "twilio_content_sid_lead_invitation",
-        "twilio_content_sid_lead_follow_up", "twilio_content_sid_rezum_registration",
+        "twilio_content_sid_lead_follow_up", "twilio_content_sid_rezum_registration", "twilio_content_sid_webinar_blast",
       ]);
     data?.forEach((r) => {
       if (r.key === "twilio_account_sid") setAccountSid(r.value || "");
@@ -361,6 +362,7 @@ function FonnteTab() {
       if (r.key === "twilio_content_sid_lead_invitation") setContentSidInvite(r.value || "");
       if (r.key === "twilio_content_sid_lead_follow_up") setContentSidFollowUp(r.value || "");
       if (r.key === "twilio_content_sid_rezum_registration") setContentSidRezum(r.value || "HX18ee54168a8e79ef4693be0774ddcee8");
+      if (r.key === "twilio_content_sid_webinar_blast") setContentSidWebinar(r.value || "HX41f89191c36c51415223e2ba7c27429a");
     });
     setLoading(false);
   }
@@ -464,6 +466,7 @@ function FonnteTab() {
         content_sid_lead_invitation: contentSidInvite.trim(),
         content_sid_lead_follow_up: contentSidFollowUp.trim(),
         content_sid_rezum_registration: contentSidRezum.trim(),
+        content_sid_webinar_blast: contentSidWebinar.trim(),
       }),
     });
     const j = await res.json();
@@ -661,6 +664,14 @@ function FonnteTab() {
               placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
             <p className="text-[11px] text-muted-foreground">
               Variable: <code>{"{{1}}"}</code>=Nama Pasien. Template ini terpisah dan tidak menggantikan Follow Up Regular.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Webinar Blast · Content SID</Label>
+            <Input value={contentSidWebinar} onChange={(e) => setContentSidWebinar(e.target.value)}
+              placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
+            <p className="text-[11px] text-muted-foreground">
+              Variable: <code>{"{{1}}"}</code>=Nama. Hanya dipakai untuk blasting di Settings → Webinar.
             </p>
           </div>
           <Button onClick={saveTemplates} disabled={savingTemplates || loading}>
