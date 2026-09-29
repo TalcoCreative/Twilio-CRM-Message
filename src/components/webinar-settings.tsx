@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
 import { WebinarBlastPanel } from "@/components/webinar-blast";
+import { WebinarQuestionsEditor, WebinarAnswersTable, DEFAULT_WEBINAR_QUESTIONS, type WebinarQuestion } from "@/components/webinar-form";
 import { Loader2, Plus, Trash2, Video, Users } from "lucide-react";
 
 type Webinar = {
@@ -18,6 +19,7 @@ type Webinar = {
   message_template: string;
   is_active: boolean;
   stop_chatbot: boolean;
+  form_questions: WebinarQuestion[];
   created_at: string;
 };
 
@@ -39,7 +41,7 @@ export function WebinarTab() {
     const { data, error } = await supabase
       .from("webinars").select("*").order("created_at", { ascending: false });
     if (error) toast.error(error.message);
-    setItems((data as Webinar[]) || []);
+    setItems(((data as any[]) || []).map((w) => ({ ...w, form_questions: Array.isArray(w.form_questions) ? w.form_questions : [] })));
     const { data: regs } = await supabase.from("webinar_registrations").select("webinar_id");
     const c: Record<string, number> = {};
     (regs || []).forEach((r: any) => { c[r.webinar_id] = (c[r.webinar_id] || 0) + 1; });
@@ -58,6 +60,7 @@ export function WebinarTab() {
       message_template: DEFAULT_TEMPLATE,
       is_active: true,
       stop_chatbot: true,
+      form_questions: DEFAULT_WEBINAR_QUESTIONS as any,
     });
     setCreating(false);
     if (error) return toast.error(error.message);
@@ -79,6 +82,7 @@ export function WebinarTab() {
       message_template: w.message_template,
       is_active: w.is_active,
       stop_chatbot: w.stop_chatbot,
+      form_questions: (w.form_questions || []).filter((q) => q.prompt.trim()) as any,
     }).eq("id", w.id);
     setSavingId(null);
     if (error) return toast.error(error.message.includes("unique") ? "Kode sudah dipakai webinar lain" : error.message);
@@ -157,8 +161,10 @@ export function WebinarTab() {
               </div>
             </div>
 
+            <WebinarQuestionsEditor value={w.form_questions || []} onChange={(q) => patch(w.id, { form_questions: q })} />
+
             <div className="space-y-1.5">
-              <Label>Isi Pesan Balasan</Label>
+              <Label>Isi Pesan Balasan (dikirim setelah form selesai)</Label>
               <Textarea
                 value={w.message_template}
                 onChange={(e) => patch(w.id, { message_template: e.target.value })}
@@ -186,6 +192,8 @@ export function WebinarTab() {
                 {savingId === w.id && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Simpan
               </Button>
             </div>
+
+            <WebinarAnswersTable webinarId={w.id} webinarName={w.name} questions={w.form_questions || []} />
 
             <WebinarBlastPanel webinarId={w.id} />
           </CardContent>
