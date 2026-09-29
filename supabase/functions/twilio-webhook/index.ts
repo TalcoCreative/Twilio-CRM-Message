@@ -346,10 +346,20 @@ async function finishWebinar(admin: any, contact: any, hit: any, convId: string,
 
   await sendReply(admin, contact, convId, text, cfg);
 
-  await admin.from("webinar_registrations").insert({
-    webinar_id: hit.id, contact_id: contact.id, conversation_id: convId,
-    code_used: hit.code, message_sent: text, answers,
-  });
+  // Update the pending registration if one exists, otherwise insert
+  const { data: existing } = await admin.from("webinar_registrations")
+    .select("id").eq("webinar_id", hit.id).eq("contact_id", contact.id)
+    .order("created_at", { ascending: false }).limit(1);
+  if (existing?.length) {
+    await admin.from("webinar_registrations").update({
+      message_sent: text, answers, conversation_id: convId,
+    }).eq("id", existing[0].id);
+  } else {
+    await admin.from("webinar_registrations").insert({
+      webinar_id: hit.id, contact_id: contact.id, conversation_id: convId,
+      code_used: hit.code, message_sent: text, answers,
+    });
+  }
 
   if (hit.stop_chatbot && contact.chatbot_state !== "done") {
     await admin.from("contacts").update({ chatbot_state: "done" }).eq("id", contact.id);
