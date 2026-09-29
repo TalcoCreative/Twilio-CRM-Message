@@ -245,11 +245,14 @@ Deno.serve(async (req) => {
     if (contactUpdateError) throw contactUpdateError;
 
     // Webinar form in progress / webinar codes take priority over the normal chatbot workflow.
+    // Kode webinar (mis. WB01) selalu diprioritaskan: kapan pun pasien mengetik
+    // kode aktif — chat baru, chat lama, atau form sebelumnya sudah selesai —
+    // form webinar dimulai (ulang) dan chatbot biasa tidak jalan.
     let webinarHandled = false;
-    if (message && contact.chatbot_state === "webinar_form") {
+    if (message) webinarHandled = await handleWebinarCode(admin, contact, message, conv.id, cfg);
+    if (!webinarHandled && message && contact.chatbot_state === "webinar_form") {
       webinarHandled = await continueWebinarForm(admin, contact, message, conv.id, cfg);
     }
-    if (!webinarHandled && message) webinarHandled = await handleWebinarCode(admin, contact, message, conv.id, cfg);
 
     if (!webinarHandled && contact.chatbot_state !== "done" && contact.chatbot_state !== "webinar_form" && activeWorkflowId && message) {
       await runWorkflow(admin, contact, message, conv.id, activeWorkflowId, cfg);
