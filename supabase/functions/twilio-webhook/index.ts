@@ -254,7 +254,13 @@ Deno.serve(async (req) => {
       webinarHandled = await continueWebinarForm(admin, contact, message, conv.id, cfg);
     }
 
-    if (!webinarHandled && contact.chatbot_state !== "done" && contact.chatbot_state !== "webinar_form" && activeWorkflowId && message) {
+    // Pendaftar webinar tidak pernah masuk chatbot biasa (nama/domisili/keluhan)
+    let isWebinarContact = webinarHandled;
+    if (!isWebinarContact) {
+      const { count } = await admin.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("contact_id", contact.id);
+      isWebinarContact = (count || 0) > 0;
+    }
+    if (!webinarHandled && !isWebinarContact && contact.chatbot_state !== "done" && contact.chatbot_state !== "webinar_form" && activeWorkflowId && message) {
       await runWorkflow(admin, contact, message, conv.id, activeWorkflowId, cfg);
     }
 
