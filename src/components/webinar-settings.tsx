@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
 import { WebinarBlastPanel } from "@/components/webinar-blast";
+import { WebinarPendingLinks } from "@/components/webinar-pending";
 import { WebinarQuestionsEditor, WebinarAnswersTable, DEFAULT_WEBINAR_QUESTIONS, type WebinarQuestion } from "@/components/webinar-form";
 import { Loader2, Plus, Trash2, Video, Users } from "lucide-react";
 
@@ -192,6 +193,8 @@ export function WebinarTab() {
                 {savingId === w.id && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Simpan
               </Button>
             </div>
+
+            <WebinarPendingLinks webinarId={w.id} code={w.code} />
 
             <WebinarAnswersTable webinarId={w.id} webinarName={w.name} questions={w.form_questions || []} />
 
