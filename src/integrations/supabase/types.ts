@@ -823,6 +823,7 @@ export type Database = {
       }
       webinar_registrations: {
         Row: {
+          answers: Json | null
           code_used: string
           contact_id: string | null
           conversation_id: string | null
@@ -832,6 +833,7 @@ export type Database = {
           webinar_id: string
         }
         Insert: {
+          answers?: Json | null
           code_used: string
           contact_id?: string | null
           conversation_id?: string | null
@@ -841,6 +843,7 @@ export type Database = {
           webinar_id: string
         }
         Update: {
+          answers?: Json | null
           code_used?: string
           contact_id?: string | null
           conversation_id?: string | null
@@ -877,6 +880,7 @@ export type Database = {
         Row: {
           code: string
           created_at: string
+          form_questions: Json
           id: string
           is_active: boolean
           message_template: string
@@ -888,6 +892,7 @@ export type Database = {
         Insert: {
           code: string
           created_at?: string
+          form_questions?: Json
           id?: string
           is_active?: boolean
           message_template?: string
@@ -899,6 +904,7 @@ export type Database = {
         Update: {
           code?: string
           created_at?: string
+          form_questions?: Json
           id?: string
           is_active?: boolean
           message_template?: string
