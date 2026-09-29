@@ -273,7 +273,10 @@ async function handleWebinarCode(admin: any, contact: any, message: string, conv
 
   const upperMsg = message.toUpperCase();
   let hit: any = null;
-  for (const w of webinars) {
+  // Codes with a form (e.g. WB01) win over direct-link codes (e.g. WEBINAR) when both appear
+  const qn = (w: any) => (Array.isArray(w.form_questions) ? w.form_questions.filter((q: any) => q?.prompt).length : 0);
+  const ordered = [...webinars].sort((a: any, b: any) => qn(b) - qn(a));
+  for (const w of ordered) {
     const raw = String(w.code || "").trim().toUpperCase();
     if (!raw) continue;
     const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
