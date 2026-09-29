@@ -287,6 +287,15 @@ async function handleWebinarCode(admin: any, contact: any, message: string, conv
     const data = { webinar_id: hit.id, step: 0, answers: {} };
     await admin.from("contacts").update({ chatbot_state: "webinar_form", chatbot_data: data }).eq("id", contact.id);
     contact.chatbot_state = "webinar_form";
+    // Mark contact as webinar registrant immediately (badge/filter) before form completes
+    const { data: existing } = await admin.from("webinar_registrations")
+      .select("id").eq("webinar_id", hit.id).eq("contact_id", contact.id).limit(1);
+    if (!existing?.length) {
+      await admin.from("webinar_registrations").insert({
+        webinar_id: hit.id, contact_id: contact.id, conversation_id: convId,
+        code_used: hit.code, message_sent: null, answers: null,
+      });
+    }
     await sendReply(admin, contact, convId, String(questions[0].prompt), cfg);
     return true;
   }
