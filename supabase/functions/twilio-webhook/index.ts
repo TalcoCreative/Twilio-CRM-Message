@@ -244,10 +244,14 @@ Deno.serve(async (req) => {
     }).eq("id", contact.id);
     if (contactUpdateError) throw contactUpdateError;
 
-    // Webinar codes take priority over the normal chatbot workflow.
-    const webinarHandled = message ? await handleWebinarCode(admin, contact, message, conv.id, cfg) : false;
+    // Webinar form in progress / webinar codes take priority over the normal chatbot workflow.
+    let webinarHandled = false;
+    if (message && contact.chatbot_state === "webinar_form") {
+      webinarHandled = await continueWebinarForm(admin, contact, message, conv.id, cfg);
+    }
+    if (!webinarHandled && message) webinarHandled = await handleWebinarCode(admin, contact, message, conv.id, cfg);
 
-    if (!webinarHandled && contact.chatbot_state !== "done" && activeWorkflowId && message) {
+    if (!webinarHandled && contact.chatbot_state !== "done" && contact.chatbot_state !== "webinar_form" && activeWorkflowId && message) {
       await runWorkflow(admin, contact, message, conv.id, activeWorkflowId, cfg);
     }
 
@@ -275,6 +279,53 @@ async function handleWebinarCode(admin: any, contact: any, message: string, conv
   }
   if (!hit) return false;
 
+  const questions = Array.isArray(hit.form_questions) ? hit.form_questions.filter((q: any) => q?.prompt) : [];
+  if (questions.length) {
+    const data = { webinar_id: hit.id, step: 0, answers: {} };
+    await admin.from("contacts").update({ chatbot_state: "webinar_form", chatbot_data: data }).eq("id", contact.id);
+    contact.chatbot_state = "webinar_form";
+    await sendReply(admin, contact, convId, String(questions[0].prompt), cfg);
+    return true;
+  }
+  await finishWebinar(admin, contact, hit, convId, cfg, null);
+  return true;
+}
+
+async function continueWebinarForm(admin: any, contact: any, message: string, convId: string, cfg: any): Promise<boolean> {
+  const d = contact.chatbot_data || {};
+  if (!d.webinar_id) return false;
+  const { data: w } = await admin.from("webinars").select("*").eq("id", d.webinar_id).maybeSingle();
+  if (!w) return false;
+  const questions = (Array.isArray(w.form_questions) ? w.form_questions : []).filter((q: any) => q?.prompt);
+  const step = Number(d.step || 0);
+  const q = questions[step];
+  const answers = { ...(d.answers || {}) };
+  const contactUpdates: Record<string, unknown> = {};
+  if (q) {
+    const val = message.trim();
+    answers[q.key || `q${step + 1}`] = val;
+    if (q.map === "full_name") { contactUpdates.full_name = val; contact.full_name = val; }
+    if (q.map === "domicile") contactUpdates.domicile = val;
+    if (q.map === "age") { const n = parseInt(val.replace(/\D/g, ""), 10); if (n > 0 && n < 130) contactUpdates.age = n; }
+  }
+  const next = step + 1;
+  if (next < questions.length) {
+    await admin.from("contacts").update({ ...contactUpdates, chatbot_data: { ...d, step: next, answers } }).eq("id", contact.id);
+    await sendReply(admin, contact, convId, String(questions[next].prompt), cfg);
+    return true;
+  }
+  answers.whatsapp = contact.whatsapp_number;
+  await admin.from("contacts").update({
+    ...contactUpdates,
+    chatbot_state: w.stop_chatbot ? "done" : null,
+    chatbot_data: { ...d, step: next, answers },
+  }).eq("id", contact.id);
+  contact.chatbot_state = w.stop_chatbot ? "done" : null;
+  await finishWebinar(admin, contact, w, convId, cfg, answers);
+  return true;
+}
+
+async function finishWebinar(admin: any, contact: any, hit: any, convId: string, cfg: any, answers: any) {
   const text = String(hit.message_template || "")
     .replaceAll("{{link}}", String(hit.zoom_link || ""))
     .replaceAll("{{webinar}}", String(hit.name || ""))
@@ -285,14 +336,13 @@ async function handleWebinarCode(admin: any, contact: any, message: string, conv
 
   await admin.from("webinar_registrations").insert({
     webinar_id: hit.id, contact_id: contact.id, conversation_id: convId,
-    code_used: hit.code, message_sent: text,
+    code_used: hit.code, message_sent: text, answers,
   });
 
-  if (hit.stop_chatbot) {
+  if (hit.stop_chatbot && contact.chatbot_state !== "done") {
     await admin.from("contacts").update({ chatbot_state: "done" }).eq("id", contact.id);
     contact.chatbot_state = "done";
   }
-  return true;
 }
 
 // ---------- chatbot workflow (unchanged behavior, uses Twilio for replies) ----------
