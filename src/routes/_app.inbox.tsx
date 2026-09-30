@@ -780,6 +780,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     const filled = content.replace(/\{agent\}/g, myName);
     setText(filled);
     setMode("reply");
+  }
 
   function applyWebinarReply(webinar: WebinarReply) {
     const filled = webinar.message_template
@@ -789,7 +790,6 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       .replaceAll("{{kode}}", webinar.code || "");
     setMode("reply");
     setText(filled);
-  }
   }
 
   return (
