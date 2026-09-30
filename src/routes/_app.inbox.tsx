@@ -48,6 +48,7 @@ type Message = {
   error_message?: string | null;
 };
 type QuickReply = { id: string; name: string; content: string; sort_order: number };
+type WebinarReply = { id: string; name: string; code: string; zoom_link: string; message_template: string };
 type Product = { id: string; name: string };
 
 type ComposeMode = "reply" | "note";
@@ -345,6 +346,26 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   }
 
   const active = conversations.find((c) => c.id === activeId);
+  const activeIsWebinar = active ? isWebinarConv(active) : false;
+  const [webinarReplies, setWebinarReplies] = useState<WebinarReply[]>([]);
+  useEffect(() => {
+    setWebinarReplies([]);
+    if (!active?.id || !active.contact_id || !activeIsWebinar) return;
+    let cancelled = false;
+    supabase.from("webinar_registrations")
+      .select("webinar_id")
+      .or(`conversation_id.eq.${active.id},contact_id.eq.${active.contact_id}`)
+      .then(async ({ data }) => {
+        const ids = [...new Set((data || []).map((r: any) => r.webinar_id).filter(Boolean))];
+        if (ids.length === 0) return;
+        const { data: webinars } = await supabase.from("webinars")
+          .select("id,name,code,zoom_link,message_template")
+          .in("id", ids)
+          .eq("is_active", true);
+        if (!cancelled) setWebinarReplies((webinars || []) as WebinarReply[]);
+      });
+    return () => { cancelled = true; };
+  }, [active?.id, active?.contact_id, activeIsWebinar]);
   const [webinarLocked, setWebinarLocked] = useState(false);
   useEffect(() => {
     setWebinarLocked(false);
@@ -759,6 +780,16 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     const filled = content.replace(/\{agent\}/g, myName);
     setText(filled);
     setMode("reply");
+
+  function applyWebinarReply(webinar: WebinarReply) {
+    const filled = webinar.message_template
+      .replaceAll("{{link}}", webinar.zoom_link || "")
+      .replaceAll("{{webinar}}", webinar.name || "")
+      .replaceAll("{{nama}}", active?.contact?.full_name || "")
+      .replaceAll("{{kode}}", webinar.code || "");
+    setMode("reply");
+    setText(filled);
+  }
   }
 
   return (
@@ -1359,6 +1390,29 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                           </div>
                         </PopoverContent>
                       </Popover>
+                      {activeIsWebinar && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 border-blue-500/50 text-blue-700 dark:text-blue-300" title="Balasan Webinar" disabled={windowClosed || webinarReplies.length === 0}>
+                              <Video className="size-4 sm:mr-1.5" />
+                              <span className="hidden sm:inline">Webinar</span>
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-80 p-1" align="start">
+                            <div className="max-h-72 overflow-auto">
+                              {webinarReplies.map((webinar) => (
+                                <Button key={webinar.id} type="button" variant="ghost" onClick={() => applyWebinarReply(webinar)}
+                                  className="h-auto w-full justify-start px-3 py-2 text-left">
+                                  <span className="min-w-0">
+                                    <span className="block text-xs font-medium">{webinar.name}</span>
+                                    <span className="block text-xs font-normal text-muted-foreground line-clamp-2 whitespace-normal">{webinar.message_template}</span>
+                                  </span>
+                                </Button>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
                       <Popover>
                         <PopoverTrigger asChild>
                           <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0" disabled={uploading || recording || windowClosed} title="Lampiran">
