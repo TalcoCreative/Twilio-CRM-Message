@@ -350,22 +350,17 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const [webinarReplies, setWebinarReplies] = useState<WebinarReply[]>([]);
   useEffect(() => {
     setWebinarReplies([]);
-    if (!active?.id || !active.contact_id || !activeIsWebinar) return;
+    if (!active?.id || !activeIsWebinar) return;
     let cancelled = false;
-    supabase.from("webinar_registrations")
-      .select("webinar_id")
-      .or(`conversation_id.eq.${active.id},contact_id.eq.${active.contact_id}`)
-      .then(async ({ data }) => {
-        const ids = [...new Set((data || []).map((r: any) => r.webinar_id).filter(Boolean))];
-        if (ids.length === 0) return;
-        const { data: webinars } = await supabase.from("webinars")
-          .select("id,name,code,zoom_link,message_template")
-          .in("id", ids)
-          .eq("is_active", true);
-        if (!cancelled) setWebinarReplies((webinars || []) as WebinarReply[]);
+    supabase.from("webinars")
+      .select("id,name,code,zoom_link,message_template")
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        if (!cancelled) setWebinarReplies((data || []) as WebinarReply[]);
       });
     return () => { cancelled = true; };
-  }, [active?.id, active?.contact_id, activeIsWebinar]);
+  }, [active?.id, activeIsWebinar]);
   const [webinarLocked, setWebinarLocked] = useState(false);
   useEffect(() => {
     setWebinarLocked(false);
