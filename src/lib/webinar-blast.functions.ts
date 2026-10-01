@@ -105,6 +105,15 @@ export const blastWebinar = createServerFn({ method: "POST" })
         contact_id: contact.id, conversation_id: conv.id, last_status: "sent", last_error: null,
         last_sent_at: now, send_count: (r.send_count || 0) + 1,
       }).eq("id", r.id);
+      // Tandai chat sebagai kategori webinar (label WEBINAR di Inbox)
+      const { data: existingReg } = await admin.from("webinar_registrations").select("id")
+        .eq("webinar_id", r.webinar_id).eq("contact_id", contact.id).limit(1).maybeSingle();
+      if (!existingReg) {
+        await admin.from("webinar_registrations").insert({
+          webinar_id: r.webinar_id, contact_id: contact.id, conversation_id: conv.id,
+          code_used: "BLAST", message_sent: body,
+        });
+      }
       await admin.from("whatsapp_gateway_logs").insert({
         direction: "OUTBOUND", level: "info", event: "webinar_blast", message_sid: res.sid || null,
         conversation_id: conv.id, to_number: phone, status: "sent",
