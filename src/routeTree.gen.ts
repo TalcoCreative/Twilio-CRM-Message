@@ -9,79 +9,39 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApiTwilioBackfillRouteImport } from './routes/api/twilio-backfill'
-import { Route as AppSettingsRouteImport } from './routes/_app.settings'
-import { Route as AppMyLeadsRouteImport } from './routes/_app.my-leads'
-import { Route as AppMyInboxRouteImport } from './routes/_app.my-inbox'
-import { Route as AppLeadsRouteImport } from './routes/_app.leads'
-import { Route as AppInvitationsRouteImport } from './routes/_app.invitations'
-import { Route as AppInboxRouteImport } from './routes/_app.inbox'
-import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
-import { Route as AppBroadcastRouteImport } from './routes/_app.broadcast'
-import { Route as AppAdsContentRouteImport } from './routes/_app.ads-content'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppActivityRouteImport } from './routes/_app.activity'
+import { Route as AppAdsContentRouteImport } from './routes/_app.ads-content'
+import { Route as AppBroadcastRouteImport } from './routes/_app.broadcast'
+import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppInboxRouteImport } from './routes/_app.inbox'
+import { Route as AppInvitationsRouteImport } from './routes/_app.invitations'
+import { Route as AppLeadsRouteImport } from './routes/_app.leads'
+import { Route as AppMyInboxRouteImport } from './routes/_app.my-inbox'
+import { Route as AppMyLeadsRouteImport } from './routes/_app.my-leads'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as ApiTwilioBackfillRouteImport } from './routes/api/twilio-backfill'
 import { Route as AppInvitationIdRouteImport } from './routes/_app.invitation.$id'
 
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiTwilioBackfillRoute = ApiTwilioBackfillRouteImport.update({
-  id: '/api/twilio-backfill',
-  path: '/api/twilio-backfill',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AppSettingsRoute = AppSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppMyLeadsRoute = AppMyLeadsRouteImport.update({
-  id: '/my-leads',
-  path: '/my-leads',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppMyInboxRoute = AppMyInboxRouteImport.update({
-  id: '/my-inbox',
-  path: '/my-inbox',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppLeadsRoute = AppLeadsRouteImport.update({
-  id: '/leads',
-  path: '/leads',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppInvitationsRoute = AppInvitationsRouteImport.update({
-  id: '/invitations',
-  path: '/invitations',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppInboxRoute = AppInboxRouteImport.update({
-  id: '/inbox',
-  path: '/inbox',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppDashboardRoute = AppDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppBroadcastRoute = AppBroadcastRouteImport.update({
-  id: '/broadcast',
-  path: '/broadcast',
+const AppActivityRoute = AppActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAdsContentRoute = AppAdsContentRouteImport.update({
@@ -89,10 +49,50 @@ const AppAdsContentRoute = AppAdsContentRouteImport.update({
   path: '/ads-content',
   getParentRoute: () => AppRoute,
 } as any)
-const AppActivityRoute = AppActivityRouteImport.update({
-  id: '/activity',
-  path: '/activity',
+const AppBroadcastRoute = AppBroadcastRouteImport.update({
+  id: '/broadcast',
+  path: '/broadcast',
   getParentRoute: () => AppRoute,
+} as any)
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInboxRoute = AppInboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInvitationsRoute = AppInvitationsRouteImport.update({
+  id: '/invitations',
+  path: '/invitations',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLeadsRoute = AppLeadsRouteImport.update({
+  id: '/leads',
+  path: '/leads',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMyInboxRoute = AppMyInboxRouteImport.update({
+  id: '/my-inbox',
+  path: '/my-inbox',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMyLeadsRoute = AppMyLeadsRouteImport.update({
+  id: '/my-leads',
+  path: '/my-leads',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const ApiTwilioBackfillRoute = ApiTwilioBackfillRouteImport.update({
+  id: '/api/twilio-backfill',
+  path: '/api/twilio-backfill',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppInvitationIdRoute = AppInvitationIdRouteImport.update({
   id: '/invitation/$id',
@@ -211,11 +211,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -225,74 +225,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/twilio-backfill': {
-      id: '/api/twilio-backfill'
-      path: '/api/twilio-backfill'
-      fullPath: '/api/twilio-backfill'
-      preLoaderRoute: typeof ApiTwilioBackfillRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_app/settings': {
-      id: '/_app/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/my-leads': {
-      id: '/_app/my-leads'
-      path: '/my-leads'
-      fullPath: '/my-leads'
-      preLoaderRoute: typeof AppMyLeadsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/my-inbox': {
-      id: '/_app/my-inbox'
-      path: '/my-inbox'
-      fullPath: '/my-inbox'
-      preLoaderRoute: typeof AppMyInboxRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/leads': {
-      id: '/_app/leads'
-      path: '/leads'
-      fullPath: '/leads'
-      preLoaderRoute: typeof AppLeadsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/invitations': {
-      id: '/_app/invitations'
-      path: '/invitations'
-      fullPath: '/invitations'
-      preLoaderRoute: typeof AppInvitationsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/inbox': {
-      id: '/_app/inbox'
-      path: '/inbox'
-      fullPath: '/inbox'
-      preLoaderRoute: typeof AppInboxRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/dashboard': {
-      id: '/_app/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AppDashboardRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/broadcast': {
-      id: '/_app/broadcast'
-      path: '/broadcast'
-      fullPath: '/broadcast'
-      preLoaderRoute: typeof AppBroadcastRouteImport
+    '/_app/activity': {
+      id: '/_app/activity'
+      path: '/activity'
+      fullPath: '/activity'
+      preLoaderRoute: typeof AppActivityRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/ads-content': {
@@ -302,12 +246,68 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdsContentRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/activity': {
-      id: '/_app/activity'
-      path: '/activity'
-      fullPath: '/activity'
-      preLoaderRoute: typeof AppActivityRouteImport
+    '/_app/broadcast': {
+      id: '/_app/broadcast'
+      path: '/broadcast'
+      fullPath: '/broadcast'
+      preLoaderRoute: typeof AppBroadcastRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/inbox': {
+      id: '/_app/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof AppInboxRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/invitations': {
+      id: '/_app/invitations'
+      path: '/invitations'
+      fullPath: '/invitations'
+      preLoaderRoute: typeof AppInvitationsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/leads': {
+      id: '/_app/leads'
+      path: '/leads'
+      fullPath: '/leads'
+      preLoaderRoute: typeof AppLeadsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/my-inbox': {
+      id: '/_app/my-inbox'
+      path: '/my-inbox'
+      fullPath: '/my-inbox'
+      preLoaderRoute: typeof AppMyInboxRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/my-leads': {
+      id: '/_app/my-leads'
+      path: '/my-leads'
+      fullPath: '/my-leads'
+      preLoaderRoute: typeof AppMyLeadsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/api/twilio-backfill': {
+      id: '/api/twilio-backfill'
+      path: '/api/twilio-backfill'
+      fullPath: '/api/twilio-backfill'
+      preLoaderRoute: typeof ApiTwilioBackfillRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/invitation/$id': {
       id: '/_app/invitation/$id'
