@@ -15,6 +15,7 @@ type Recipient = {
   id: string; whatsapp_number: string; full_name: string | null;
   last_status: string | null; last_error: string | null; last_sent_at: string | null;
   send_count: number; conversation_id: string | null;
+  reminder_status: string | null; reminder_sent_at: string | null; reminder_error: string | null;
 };
 
 export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
@@ -28,6 +29,18 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   const [sending, setSending] = useState(false);
   const [chatted, setChatted] = useState<Set<string>>(new Set());
 
+  async function syncRegistrants() {
+    // Semua pendaftar webinar otomatis masuk daftar blasting
+    const { data: regs } = await supabase.from("webinar_registrations")
+      .select("contact_id, contacts(whatsapp_number, full_name)").eq("webinar_id", webinarId).limit(5000);
+    const items = (regs || []).map((r: any) => r.contacts).filter((c: any) => c?.whatsapp_number)
+      .map((c: any) => ({ webinar_id: webinarId, whatsapp_number: c.whatsapp_number, full_name: c.full_name || null }));
+    if (items.length) {
+      await supabase.from("webinar_blast_recipients" as any)
+        .upsert(items as any, { onConflict: "webinar_id,whatsapp_number", ignoreDuplicates: true });
+    }
+  }
+
   async function load() {
     const { data, error } = await supabase.from("webinar_blast_recipients" as any)
       .select("*").eq("webinar_id", webinarId).order("created_at", { ascending: false });
@@ -40,7 +53,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
       setChatted(new Set((cs || []).map((c) => c.whatsapp_number)));
     }
   }
-  useEffect(() => { load(); }, [webinarId]);
+  useEffect(() => { syncRegistrants().finally(load); }, [webinarId]);
 
   async function addRows(items: { phone: string; name: string }[]) {
     const all = items.map((i) => ({ whatsapp_number: normalizeWa(i.phone), full_name: String(i.name || "").trim() || null }))
@@ -124,10 +137,27 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
     load();
   }
 
+  async function sendReminder() {
+    const ids = [...selected].filter((id) => rows.find((r) => r.id === id)?.reminder_status !== "sent");
+    if (!ids.length) return toast.error("Semua nomor terpilih sudah dikirim reminder");
+    if (!confirm(`Kirim Follow Up Reminder ke ${ids.length} nomor? (nomor yang sudah dapat reminder dilewati)`)) return;
+    setSending(true);
+    try {
+      const r = await blast({ data: { recipient_ids: ids, kind: "reminder" } });
+      toast.success(`Reminder terkirim ${r.sent}, gagal ${r.failed}`);
+      setSelected(new Set());
+    } catch (e: any) {
+      toast.error(e?.message || "Gagal kirim reminder");
+    }
+    setSending(false);
+    load();
+  }
+
   const stats = useMemo(() => ({
     total: rows.length,
     sent: rows.filter((r) => r.last_status === "sent").length,
     failed: rows.filter((r) => r.last_status === "failed").length,
+    reminded: rows.filter((r) => r.reminder_status === "sent").length,
     fresh: rows.filter((r) => !chatted.has(r.whatsapp_number)).length,
   }), [rows, chatted]);
 
@@ -140,10 +170,11 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
         <Badge variant="secondary">Total {stats.total}</Badge>
         <Badge variant="secondary">Belum ada di Chatbox {stats.fresh}</Badge>
         <Badge>Terkirim {stats.sent}</Badge>
+        <Badge variant="outline">Reminder ✓ {stats.reminded}</Badge>
         {stats.failed > 0 && <Badge variant="destructive">Gagal {stats.failed}</Badge>}
       </div>
       <p className="text-xs text-muted-foreground">
-        Pesan memakai template webinar dengan <b>{"{{1}}"}</b> = nama. Nomor yang sudah pernah chat masuk ke chat yang sama di Inbox; nomor baru otomatis dibuatkan chat baru.
+        Pesan memakai template webinar dengan <b>{"{{1}}"}</b> = nama. Semua pendaftar webinar otomatis masuk daftar ini; nomor lain bisa ditambah manual/import. Follow Up Reminder hanya bisa dikirim sekali per nomor. Nomor yang sudah pernah chat masuk ke chat yang sama di Inbox; nomor baru otomatis dibuatkan chat baru.
       </p>
 
       <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
@@ -180,10 +211,16 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
         <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.last_status !== "sent").map((r) => r.id)))}>
           Pilih yang belum terkirim
         </Button>
+        <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.reminder_status !== "sent").map((r) => r.id)))}>
+          Pilih yang belum reminder
+        </Button>
         <Button size="sm" variant="ghost" onClick={removeSelected} disabled={!selected.size}>
           <Trash2 className="h-4 w-4 mr-1 text-destructive" /> Hapus
         </Button>
-        <Button size="sm" className="ml-auto" onClick={send} disabled={sending || !selected.size}>
+        <Button size="sm" variant="secondary" className="ml-auto" onClick={sendReminder} disabled={sending || !selected.size}>
+          <Send className="h-4 w-4 mr-2" /> Follow Up Reminder
+        </Button>
+        <Button size="sm" onClick={send} disabled={sending || !selected.size}>
           {sending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
           Blast ke {selected.size} nomor
         </Button>
@@ -206,6 +243,8 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
               : <Badge variant="secondary">Belum ada di Chatbox</Badge>}
             {r.last_status === "sent" && <Badge>Terkirim{r.send_count > 1 ? ` ×${r.send_count}` : ""}</Badge>}
             {r.last_status === "failed" && <Badge variant="destructive">Gagal</Badge>}
+            {r.reminder_status === "sent" && <Badge className="bg-primary/15 text-primary hover:bg-primary/15">✓ Reminder terkirim</Badge>}
+            {r.reminder_status === "failed" && <Badge variant="destructive" title={r.reminder_error || ""}>Reminder gagal</Badge>}
           </label>
         ))}
       </div>

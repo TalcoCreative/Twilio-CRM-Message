@@ -333,6 +333,7 @@ function FonnteTab() {
   const [contentSidFollowUp, setContentSidFollowUp] = useState("");
   const [contentSidRezum, setContentSidRezum] = useState("HX18ee54168a8e79ef4693be0774ddcee8");
   const [contentSidWebinar, setContentSidWebinar] = useState("HX41f89191c36c51415223e2ba7c27429a");
+  const [contentSidReminder, setContentSidReminder] = useState("HX77e0173b9c5f9e41072c830822f3d24f");
   const [savingTemplates, setSavingTemplates] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -349,7 +350,7 @@ function FonnteTab() {
         "twilio_account_sid", "twilio_auth_token", "twilio_whatsapp_from",
         "twilio_messaging_service_sid", "twilio_api_key_sid", "twilio_api_key_secret",
         "twilio_content_sid_agent_assignment", "twilio_content_sid_lead_invitation",
-        "twilio_content_sid_lead_follow_up", "twilio_content_sid_rezum_registration", "twilio_content_sid_webinar_blast",
+        "twilio_content_sid_lead_follow_up", "twilio_content_sid_rezum_registration", "twilio_content_sid_webinar_blast", "twilio_content_sid_webinar_reminder",
       ]);
     data?.forEach((r) => {
       if (r.key === "twilio_account_sid") setAccountSid(r.value || "");
@@ -363,6 +364,7 @@ function FonnteTab() {
       if (r.key === "twilio_content_sid_lead_follow_up") setContentSidFollowUp(r.value || "");
       if (r.key === "twilio_content_sid_rezum_registration") setContentSidRezum(r.value || "HX18ee54168a8e79ef4693be0774ddcee8");
       if (r.key === "twilio_content_sid_webinar_blast") setContentSidWebinar(r.value || "HX41f89191c36c51415223e2ba7c27429a");
+      if (r.key === "twilio_content_sid_webinar_reminder") setContentSidReminder(r.value || "HX77e0173b9c5f9e41072c830822f3d24f");
     });
     setLoading(false);
   }
@@ -467,6 +469,7 @@ function FonnteTab() {
         content_sid_lead_follow_up: contentSidFollowUp.trim(),
         content_sid_rezum_registration: contentSidRezum.trim(),
         content_sid_webinar_blast: contentSidWebinar.trim(),
+        content_sid_webinar_reminder: contentSidReminder.trim(),
       }),
     });
     const j = await res.json();
@@ -672,6 +675,14 @@ function FonnteTab() {
               placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
             <p className="text-[11px] text-muted-foreground">
               Variable: <code>{"{{1}}"}</code>=Nama. Hanya dipakai untuk blasting di Settings → Webinar.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Webinar Reminder · Content SID</Label>
+            <Input value={contentSidReminder} onChange={(e) => setContentSidReminder(e.target.value)}
+              placeholder="HXXXXXXXXXXXXXXXXXXXXXXXX" className="font-mono text-xs" />
+            <p className="text-[11px] text-muted-foreground">
+              Variable: <code>{"{{1}}"}</code>=Nama. Dipakai tombol Follow Up Reminder di Settings → Webinar (sekali kirim per nomor).
             </p>
           </div>
           <Button onClick={saveTemplates} disabled={savingTemplates || loading}>

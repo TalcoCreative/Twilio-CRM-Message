@@ -764,6 +764,9 @@ export type Database = {
           last_error: string | null
           last_sent_at: string | null
           last_status: string | null
+          reminder_error: string | null
+          reminder_sent_at: string | null
+          reminder_status: string | null
           send_count: number
           updated_at: string
           webinar_id: string
@@ -778,6 +781,9 @@ export type Database = {
           last_error?: string | null
           last_sent_at?: string | null
           last_status?: string | null
+          reminder_error?: string | null
+          reminder_sent_at?: string | null
+          reminder_status?: string | null
           send_count?: number
           updated_at?: string
           webinar_id: string
@@ -792,6 +798,9 @@ export type Database = {
           last_error?: string | null
           last_sent_at?: string | null
           last_status?: string | null
+          reminder_error?: string | null
+          reminder_sent_at?: string | null
+          reminder_status?: string | null
           send_count?: number
           updated_at?: string
           webinar_id?: string
