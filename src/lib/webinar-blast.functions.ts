@@ -4,7 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export const blastWebinar = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ recipient_ids: z.array(z.string().uuid()).min(1).max(500) }).parse(d))
+  .inputValidator((d) => z.object({ recipient_ids: z.array(z.string().uuid()).min(1).max(500), kind: z.enum(["blast", "reminder"]).default("blast") }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: isAdmin } = await context.supabase.rpc("is_admin", { _user_id: context.userId });
     if (!isAdmin) throw new Error("Hanya Admin yang bisa blasting webinar");
@@ -15,9 +15,10 @@ export const blastWebinar = createServerFn({ method: "POST" })
     if (!cfg.accountSid || !(cfg.authToken || cfg.apiKeySid) || !(cfg.whatsappFrom || cfg.messagingServiceSid)) {
       throw new Error("Kredensial Twilio belum lengkap");
     }
-    const { data: sidRow } = await admin.from("system_settings").select("value").eq("key", "twilio_content_sid_webinar_blast").maybeSingle();
+    const isReminder = data.kind === "reminder";
+    const { data: sidRow } = await admin.from("system_settings").select("value").eq("key", isReminder ? "twilio_content_sid_webinar_reminder" : "twilio_content_sid_webinar_blast").maybeSingle();
     const contentSid = (sidRow?.value || "").trim();
-    if (!contentSid) throw new Error("Content SID Webinar Blast belum diisi");
+    if (!contentSid) throw new Error(isReminder ? "Content SID Webinar Reminder belum diisi" : "Content SID Webinar Blast belum diisi");
     const tokenAuth = cfg.authToken ? "Basic " + btoa(`${cfg.accountSid}:${cfg.authToken}`) : "";
 
     let templateBody = "";
@@ -53,9 +54,12 @@ export const blastWebinar = createServerFn({ method: "POST" })
 
     let sent = 0, failed = 0;
     for (const r of recips || []) {
+      if (isReminder && (r as any).reminder_status === "sent") continue;
       const fail = async (msg: string, extra: Record<string, any> = {}) => {
         failed++;
-        await admin.from("webinar_blast_recipients").update({ last_status: "failed", last_error: msg, ...extra }).eq("id", r.id);
+        await admin.from("webinar_blast_recipients").update((isReminder
+          ? { reminder_status: "failed", reminder_error: msg, ...extra }
+          : { last_status: "failed", last_error: msg, ...extra }) as any).eq("id", r.id);
       };
       const phone = normalizePhone(r.whatsapp_number);
       if (!phone) { await fail("Nomor tidak valid"); continue; }
@@ -86,14 +90,14 @@ export const blastWebinar = createServerFn({ method: "POST" })
       if (!res.ok) {
         await fail(res.error, { contact_id: contact.id, conversation_id: conv.id });
         await admin.from("whatsapp_gateway_logs").insert({
-          direction: "OUTBOUND", level: "error", event: "webinar_blast", conversation_id: conv.id, to_number: phone,
+          direction: "OUTBOUND", level: "error", event: isReminder ? "webinar_reminder" : "webinar_blast", conversation_id: conv.id, to_number: phone,
           status: "failed", error_message: res.error, payload: { content_sid: contentSid, webinar_id: r.webinar_id, raw: res.raw },
         });
         continue;
       }
       const body = templateBody
         ? templateBody.replace(/\{\{\s*(\d+)\s*\}\}/g, (_m: string, k: string) => (vars as any)[k] ?? "")
-        : `[Undangan Webinar] Halo ${name}`;
+        : `${isReminder ? "[Reminder Webinar]" : "[Undangan Webinar]"} Halo ${name}`;
       await admin.from("messages").insert({
         conversation_id: conv.id, direction: "OUTBOUND", type: "TEXT", content: body,
         sent_by_id: context.userId, fonnte_message_id: res.sid || null, status: "SENT",
@@ -101,10 +105,12 @@ export const blastWebinar = createServerFn({ method: "POST" })
       await admin.from("conversations").update({
         last_message_at: now, last_message_preview: body.slice(0, 160), last_replied_by_id: context.userId,
       }).eq("id", conv.id);
-      await admin.from("webinar_blast_recipients").update({
-        contact_id: contact.id, conversation_id: conv.id, last_status: "sent", last_error: null,
-        last_sent_at: now, send_count: (r.send_count || 0) + 1,
-      }).eq("id", r.id);
+      await admin.from("webinar_blast_recipients").update((isReminder
+        ? { contact_id: contact.id, conversation_id: conv.id, reminder_status: "sent", reminder_error: null, reminder_sent_at: now }
+        : {
+          contact_id: contact.id, conversation_id: conv.id, last_status: "sent", last_error: null,
+          last_sent_at: now, send_count: (r.send_count || 0) + 1,
+        }) as any).eq("id", r.id);
       // Tandai chat sebagai kategori webinar (label WEBINAR di Inbox)
       const { data: existingReg } = await admin.from("webinar_registrations").select("id")
         .eq("webinar_id", r.webinar_id).eq("contact_id", contact.id).limit(1).maybeSingle();
@@ -115,7 +121,7 @@ export const blastWebinar = createServerFn({ method: "POST" })
         });
       }
       await admin.from("whatsapp_gateway_logs").insert({
-        direction: "OUTBOUND", level: "info", event: "webinar_blast", message_sid: res.sid || null,
+        direction: "OUTBOUND", level: "info", event: isReminder ? "webinar_reminder" : "webinar_blast", message_sid: res.sid || null,
         conversation_id: conv.id, to_number: phone, status: "sent",
         payload: { content_sid: contentSid, webinar_id: r.webinar_id, variables: vars },
       });
