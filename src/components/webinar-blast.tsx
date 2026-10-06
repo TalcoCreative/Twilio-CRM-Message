@@ -124,6 +124,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   async function send() {
     const ids = [...selected];
     if (!ids.length) return toast.error("Pilih nomor dulu");
+    if (ids.length > 50) return toast.error("Maksimal 50 nomor sekali blasting — kurangi pilihanmu");
     if (!confirm(`Kirim template webinar ke ${ids.length} nomor?`)) return;
     setSending(true);
     try {
@@ -140,6 +141,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   async function sendReminder() {
     const ids = [...selected].filter((id) => rows.find((r) => r.id === id)?.reminder_status !== "sent");
     if (!ids.length) return toast.error("Semua nomor terpilih sudah dikirim reminder");
+    if (ids.length > 50) return toast.error("Maksimal 50 nomor sekali kirim — kurangi pilihanmu");
     if (!confirm(`Kirim Follow Up Reminder ke ${ids.length} nomor? (nomor yang sudah dapat reminder dilewati)`)) return;
     setSending(true);
     try {
