@@ -4,7 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export const blastWebinar = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ recipient_ids: z.array(z.string().uuid()).min(1).max(500), kind: z.enum(["blast", "reminder"]).default("blast") }).parse(d))
+  .inputValidator((d) => z.object({ recipient_ids: z.array(z.string().uuid()).min(1).max(50), kind: z.enum(["blast", "reminder"]).default("blast") }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: isAdmin } = await context.supabase.rpc("is_admin", { _user_id: context.userId });
     if (!isAdmin) throw new Error("Hanya Admin yang bisa blasting webinar");
