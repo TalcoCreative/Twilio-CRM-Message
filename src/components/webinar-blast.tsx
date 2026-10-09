@@ -48,13 +48,28 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
     const { data, error } = await supabase.from("webinar_blast_recipients" as any)
       .select("*").eq("webinar_id", webinarId).order("created_at", { ascending: false });
     if (error) return toast.error(error.message);
-    const list = (data as any as Recipient[]) || [];
-    setRows(list);
+    let list = (data as any as Recipient[]) || [];
     const nums = list.map((r) => r.whatsapp_number);
     if (nums.length) {
-      const { data: cs } = await supabase.from("contacts").select("whatsapp_number").in("whatsapp_number", nums.slice(0, 500));
+      const { data: cs } = await supabase.from("contacts").select("id, whatsapp_number").in("whatsapp_number", nums.slice(0, 500));
       setChatted(new Set((cs || []).map((c) => c.whatsapp_number)));
+      // Urutkan seperti Inbox: yang terakhir chat paling atas
+      const contactIds = (cs || []).map((c) => c.id);
+      const lastChat = new Map<string, number>();
+      if (contactIds.length) {
+        const { data: convs } = await supabase.from("conversations")
+          .select("contact_id, last_message_at").in("contact_id", contactIds.slice(0, 500));
+        const contactToNum = new Map((cs || []).map((c) => [c.id, c.whatsapp_number]));
+        for (const cv of convs || []) {
+          const num = contactToNum.get(cv.contact_id);
+          if (!num) continue;
+          const ts = cv.last_message_at ? new Date(cv.last_message_at).getTime() : 0;
+          if (ts > (lastChat.get(num) || 0)) lastChat.set(num, ts);
+        }
+      }
+      list = [...list].sort((a, b) => (lastChat.get(b.whatsapp_number) || 0) - (lastChat.get(a.whatsapp_number) || 0));
     }
+    setRows(list);
   }
   useEffect(() => { syncRegistrants().finally(load); }, [webinarId]);
 
