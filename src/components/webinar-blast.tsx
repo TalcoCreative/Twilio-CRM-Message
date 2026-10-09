@@ -173,11 +173,29 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
     load();
   }
 
+  async function sendReminderH() {
+    const ids = [...selected].filter((id) => rows.find((r) => r.id === id)?.reminder_h_status !== "sent");
+    if (!ids.length) return toast.error("Semua nomor terpilih sudah dikirim Reminder Hari H");
+    if (!confirm(`Kirim Reminder Hari H ke ${ids.length} nomor? (nomor yang sudah dapat Reminder Hari H dilewati)`)) return;
+    setSending(true);
+    try {
+      const r = await sendChunks(ids, "reminder_h");
+      toast.success(`Reminder Hari H terkirim ${r.sent}, gagal ${r.failed}`);
+      setSelected(new Set());
+    } catch (e: any) {
+      toast.dismiss("blast-progress");
+      toast.error(e?.message || "Gagal kirim Reminder Hari H");
+    }
+    setSending(false);
+    load();
+  }
+
   const stats = useMemo(() => ({
     total: rows.length,
     sent: rows.filter((r) => r.last_status === "sent").length,
     failed: rows.filter((r) => r.last_status === "failed").length,
     reminded: rows.filter((r) => r.reminder_status === "sent").length,
+    remindedH: rows.filter((r) => r.reminder_h_status === "sent").length,
     fresh: rows.filter((r) => !chatted.has(r.whatsapp_number)).length,
   }), [rows, chatted]);
 
