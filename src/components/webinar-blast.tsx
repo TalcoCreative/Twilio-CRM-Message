@@ -17,9 +17,10 @@ type Recipient = {
   send_count: number; conversation_id: string | null;
   reminder_status: string | null; reminder_sent_at: string | null; reminder_error: string | null;
   reminder_h_status: string | null; reminder_h_sent_at: string | null; reminder_h_error: string | null;
+  thanks_status: string | null; thanks_sent_at: string | null; thanks_error: string | null;
 };
 
-type BlastKind = "blast" | "reminder" | "reminder_h";
+type BlastKind = "blast" | "reminder" | "reminder_h" | "thanks";
 
 export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   const blast = useServerFn(blastWebinar);
@@ -205,12 +206,30 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
     load();
   }
 
+  async function sendThanks() {
+    const ids = [...selected].filter((id) => rows.find((r) => r.id === id)?.thanks_status !== "sent");
+    if (!ids.length) return toast.error("Semua nomor terpilih sudah dikirim Ucapan Terima Kasih");
+    if (!confirm(`Kirim Ucapan Terima Kasih ke ${ids.length} nomor? (nomor yang sudah dapat dilewati)`)) return;
+    setSending(true);
+    try {
+      const r = await sendChunks(ids, "thanks");
+      toast.success(`Ucapan Terima Kasih terkirim ${r.sent}, gagal ${r.failed}`);
+      setSelected(new Set());
+    } catch (e: any) {
+      toast.dismiss("blast-progress");
+      toast.error(e?.message || "Gagal kirim Ucapan Terima Kasih");
+    }
+    setSending(false);
+    load();
+  }
+
   const stats = useMemo(() => ({
     total: rows.length,
     sent: rows.filter((r) => r.last_status === "sent").length,
     failed: rows.filter((r) => r.last_status === "failed").length,
     reminded: rows.filter((r) => r.reminder_status === "sent").length,
     remindedH: rows.filter((r) => r.reminder_h_status === "sent").length,
+    thanked: rows.filter((r) => r.thanks_status === "sent").length,
     fresh: rows.filter((r) => !chatted.has(r.whatsapp_number)).length,
   }), [rows, chatted]);
 
@@ -225,6 +244,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
         <Badge>Terkirim {stats.sent}</Badge>
         <Badge variant="outline">Reminder ✓ {stats.reminded}</Badge>
         <Badge variant="outline">Hari H ✓ {stats.remindedH}</Badge>
+        <Badge variant="outline">Terima Kasih ✓ {stats.thanked}</Badge>
         {stats.failed > 0 && <Badge variant="destructive">Gagal {stats.failed}</Badge>}
       </div>
       <p className="text-xs text-muted-foreground">
@@ -271,6 +291,9 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
         <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.reminder_h_status !== "sent").map((r) => r.id)))}>
           Pilih yang belum Hari H
         </Button>
+        <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.thanks_status !== "sent").map((r) => r.id)))}>
+          Pilih yang belum Terima Kasih
+        </Button>
         <Button size="sm" variant="ghost" onClick={removeSelected} disabled={!selected.size}>
           <Trash2 className="h-4 w-4 mr-1 text-destructive" /> Hapus
         </Button>
@@ -279,6 +302,9 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
         </Button>
         <Button size="sm" variant="secondary" onClick={sendReminderH} disabled={sending || !selected.size}>
           <Send className="h-4 w-4 mr-2" /> Reminder Hari H
+        </Button>
+        <Button size="sm" variant="secondary" onClick={sendThanks} disabled={sending || !selected.size}>
+          <Send className="h-4 w-4 mr-2" /> Ucapan Terima Kasih
         </Button>
         <Button size="sm" onClick={send} disabled={sending || !selected.size}>
           {sending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
@@ -307,6 +333,8 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
             {r.reminder_status === "failed" && <Badge variant="destructive" title={r.reminder_error || ""}>Reminder gagal</Badge>}
             {r.reminder_h_status === "sent" && <Badge className="bg-primary/15 text-primary hover:bg-primary/15">✓ Hari H terkirim</Badge>}
             {r.reminder_h_status === "failed" && <Badge variant="destructive" title={r.reminder_h_error || ""}>Hari H gagal</Badge>}
+            {r.thanks_status === "sent" && <Badge className="bg-primary/15 text-primary hover:bg-primary/15">✓ Terima Kasih terkirim</Badge>}
+            {r.thanks_status === "failed" && <Badge variant="destructive" title={r.thanks_error || ""}>Terima Kasih gagal</Badge>}
           </label>
         ))}
       </div>

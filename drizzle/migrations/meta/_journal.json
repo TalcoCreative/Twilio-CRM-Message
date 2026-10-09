@@ -8,6 +8,13 @@
       "when": 1791511212778,
       "tag": "0000_add_webinar_reminder_h",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791521907090,
+      "tag": "0001_add_webinar_thanks_columns",
+      "breakpoints": true
     }
   ]
 }
