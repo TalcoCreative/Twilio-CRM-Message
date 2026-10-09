@@ -16,7 +16,10 @@ type Recipient = {
   last_status: string | null; last_error: string | null; last_sent_at: string | null;
   send_count: number; conversation_id: string | null;
   reminder_status: string | null; reminder_sent_at: string | null; reminder_error: string | null;
+  reminder_h_status: string | null; reminder_h_sent_at: string | null; reminder_h_error: string | null;
 };
+
+type BlastKind = "blast" | "reminder" | "reminder_h";
 
 export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   const blast = useServerFn(blastWebinar);
@@ -122,7 +125,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   }
 
   // Dikirim per 50 nomor supaya permintaan tidak terlalu lama (tidak ada batas total).
-  async function sendChunks(ids: string[], kind: "blast" | "reminder") {
+  async function sendChunks(ids: string[], kind: BlastKind) {
     let sent = 0, failed = 0;
     const total = Math.ceil(ids.length / 50);
     for (let i = 0; i < ids.length; i += 50) {
