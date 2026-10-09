@@ -209,6 +209,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
         <Badge variant="secondary">Belum ada di Chatbox {stats.fresh}</Badge>
         <Badge>Terkirim {stats.sent}</Badge>
         <Badge variant="outline">Reminder ✓ {stats.reminded}</Badge>
+        <Badge variant="outline">Hari H ✓ {stats.remindedH}</Badge>
         {stats.failed > 0 && <Badge variant="destructive">Gagal {stats.failed}</Badge>}
       </div>
       <p className="text-xs text-muted-foreground">
@@ -252,11 +253,17 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
         <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.reminder_status !== "sent").map((r) => r.id)))}>
           Pilih yang belum reminder
         </Button>
+        <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.reminder_h_status !== "sent").map((r) => r.id)))}>
+          Pilih yang belum Hari H
+        </Button>
         <Button size="sm" variant="ghost" onClick={removeSelected} disabled={!selected.size}>
           <Trash2 className="h-4 w-4 mr-1 text-destructive" /> Hapus
         </Button>
         <Button size="sm" variant="secondary" className="ml-auto" onClick={sendReminder} disabled={sending || !selected.size}>
           <Send className="h-4 w-4 mr-2" /> Follow Up Reminder
+        </Button>
+        <Button size="sm" variant="secondary" onClick={sendReminderH} disabled={sending || !selected.size}>
+          <Send className="h-4 w-4 mr-2" /> Reminder Hari H
         </Button>
         <Button size="sm" onClick={send} disabled={sending || !selected.size}>
           {sending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
@@ -283,6 +290,8 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
             {r.last_status === "failed" && <Badge variant="destructive">Gagal</Badge>}
             {r.reminder_status === "sent" && <Badge className="bg-primary/15 text-primary hover:bg-primary/15">✓ Reminder terkirim</Badge>}
             {r.reminder_status === "failed" && <Badge variant="destructive" title={r.reminder_error || ""}>Reminder gagal</Badge>}
+            {r.reminder_h_status === "sent" && <Badge className="bg-primary/15 text-primary hover:bg-primary/15">✓ Hari H terkirim</Badge>}
+            {r.reminder_h_status === "failed" && <Badge variant="destructive" title={r.reminder_h_error || ""}>Hari H gagal</Badge>}
           </label>
         ))}
       </div>
