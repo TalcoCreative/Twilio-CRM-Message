@@ -222,13 +222,13 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={allChecked}
-            onChange={(e) => setSelected(e.target.checked ? new Set(rows.slice(0, 50).map((r) => r.id)) : new Set())} />
-          Pilih semua (maks 50)
+            onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} />
+          Pilih semua
         </label>
-        <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.last_status !== "sent").slice(0, 50).map((r) => r.id)))}>
+        <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.last_status !== "sent").map((r) => r.id)))}>
           Pilih yang belum terkirim
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.reminder_status !== "sent").slice(0, 50).map((r) => r.id)))}>
+        <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.reminder_status !== "sent").map((r) => r.id)))}>
           Pilih yang belum reminder
         </Button>
         <Button size="sm" variant="ghost" onClick={removeSelected} disabled={!selected.size}>
