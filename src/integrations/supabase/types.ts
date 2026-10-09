@@ -771,6 +771,9 @@ export type Database = {
           reminder_sent_at: string | null
           reminder_status: string | null
           send_count: number
+          thanks_error: string | null
+          thanks_sent_at: string | null
+          thanks_status: string | null
           updated_at: string
           webinar_id: string
           whatsapp_number: string
@@ -791,6 +794,9 @@ export type Database = {
           reminder_sent_at?: string | null
           reminder_status?: string | null
           send_count?: number
+          thanks_error?: string | null
+          thanks_sent_at?: string | null
+          thanks_status?: string | null
           updated_at?: string
           webinar_id: string
           whatsapp_number: string
@@ -811,6 +817,9 @@ export type Database = {
           reminder_sent_at?: string | null
           reminder_status?: string | null
           send_count?: number
+          thanks_error?: string | null
+          thanks_sent_at?: string | null
+          thanks_status?: string | null
           updated_at?: string
           webinar_id?: string
           whatsapp_number?: string
