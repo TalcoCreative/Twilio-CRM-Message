@@ -4,7 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export const blastWebinar = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ recipient_ids: z.array(z.string().uuid()).min(1), kind: z.enum(["blast", "reminder"]).default("blast") }).parse(d))
+  .inputValidator((d) => z.object({ recipient_ids: z.array(z.string().uuid()).min(1), kind: z.enum(["blast", "reminder", "reminder_h"]).default("blast") }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: isAdmin } = await context.supabase.rpc("is_admin", { _user_id: context.userId });
     if (!isAdmin) throw new Error("Hanya Admin yang bisa blasting webinar");
@@ -15,10 +15,18 @@ export const blastWebinar = createServerFn({ method: "POST" })
     if (!cfg.accountSid || !(cfg.authToken || cfg.apiKeySid) || !(cfg.whatsappFrom || cfg.messagingServiceSid)) {
       throw new Error("Kredensial Twilio belum lengkap");
     }
-    const isReminder = data.kind === "reminder";
-    const { data: sidRow } = await admin.from("system_settings").select("value").eq("key", isReminder ? "twilio_content_sid_webinar_reminder" : "twilio_content_sid_webinar_blast").maybeSingle();
+    const kind = data.kind;
+    const isReminder = kind !== "blast";
+    const sidKey = kind === "reminder_h" ? "twilio_content_sid_webinar_reminder_h"
+      : kind === "reminder" ? "twilio_content_sid_webinar_reminder" : "twilio_content_sid_webinar_blast";
+    const statusCol = kind === "reminder_h" ? "reminder_h_status" : kind === "reminder" ? "reminder_status" : "last_status";
+    const errorCol = kind === "reminder_h" ? "reminder_h_error" : kind === "reminder" ? "reminder_error" : "last_error";
+    const sentAtCol = kind === "reminder_h" ? "reminder_h_sent_at" : kind === "reminder" ? "reminder_sent_at" : "last_sent_at";
+    const eventName = kind === "reminder_h" ? "webinar_reminder_h" : kind === "reminder" ? "webinar_reminder" : "webinar_blast";
+    const kindLabel = kind === "reminder_h" ? "Reminder Hari H" : kind === "reminder" ? "Reminder" : "Blast";
+    const { data: sidRow } = await admin.from("system_settings").select("value").eq("key", sidKey).maybeSingle();
     const contentSid = (sidRow?.value || "").trim();
-    if (!contentSid) throw new Error(isReminder ? "Content SID Webinar Reminder belum diisi" : "Content SID Webinar Blast belum diisi");
+    if (!contentSid) throw new Error(`Content SID Webinar ${kindLabel} belum diisi`);
     const tokenAuth = cfg.authToken ? "Basic " + btoa(`${cfg.accountSid}:${cfg.authToken}`) : "";
 
     let templateBody = "";
