@@ -16,7 +16,10 @@ type Recipient = {
   last_status: string | null; last_error: string | null; last_sent_at: string | null;
   send_count: number; conversation_id: string | null;
   reminder_status: string | null; reminder_sent_at: string | null; reminder_error: string | null;
+  reminder_h_status: string | null; reminder_h_sent_at: string | null; reminder_h_error: string | null;
 };
+
+type BlastKind = "blast" | "reminder" | "reminder_h";
 
 export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   const blast = useServerFn(blastWebinar);
@@ -122,7 +125,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   }
 
   // Dikirim per 50 nomor supaya permintaan tidak terlalu lama (tidak ada batas total).
-  async function sendChunks(ids: string[], kind: "blast" | "reminder") {
+  async function sendChunks(ids: string[], kind: BlastKind) {
     let sent = 0, failed = 0;
     const total = Math.ceil(ids.length / 50);
     for (let i = 0; i < ids.length; i += 50) {
@@ -170,11 +173,29 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
     load();
   }
 
+  async function sendReminderH() {
+    const ids = [...selected].filter((id) => rows.find((r) => r.id === id)?.reminder_h_status !== "sent");
+    if (!ids.length) return toast.error("Semua nomor terpilih sudah dikirim Reminder Hari H");
+    if (!confirm(`Kirim Reminder Hari H ke ${ids.length} nomor? (nomor yang sudah dapat Reminder Hari H dilewati)`)) return;
+    setSending(true);
+    try {
+      const r = await sendChunks(ids, "reminder_h");
+      toast.success(`Reminder Hari H terkirim ${r.sent}, gagal ${r.failed}`);
+      setSelected(new Set());
+    } catch (e: any) {
+      toast.dismiss("blast-progress");
+      toast.error(e?.message || "Gagal kirim Reminder Hari H");
+    }
+    setSending(false);
+    load();
+  }
+
   const stats = useMemo(() => ({
     total: rows.length,
     sent: rows.filter((r) => r.last_status === "sent").length,
     failed: rows.filter((r) => r.last_status === "failed").length,
     reminded: rows.filter((r) => r.reminder_status === "sent").length,
+    remindedH: rows.filter((r) => r.reminder_h_status === "sent").length,
     fresh: rows.filter((r) => !chatted.has(r.whatsapp_number)).length,
   }), [rows, chatted]);
 
@@ -188,6 +209,7 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
         <Badge variant="secondary">Belum ada di Chatbox {stats.fresh}</Badge>
         <Badge>Terkirim {stats.sent}</Badge>
         <Badge variant="outline">Reminder ✓ {stats.reminded}</Badge>
+        <Badge variant="outline">Hari H ✓ {stats.remindedH}</Badge>
         {stats.failed > 0 && <Badge variant="destructive">Gagal {stats.failed}</Badge>}
       </div>
       <p className="text-xs text-muted-foreground">
@@ -231,11 +253,17 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
         <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.reminder_status !== "sent").map((r) => r.id)))}>
           Pilih yang belum reminder
         </Button>
+        <Button size="sm" variant="outline" onClick={() => setSelected(new Set(rows.filter((r) => r.reminder_h_status !== "sent").map((r) => r.id)))}>
+          Pilih yang belum Hari H
+        </Button>
         <Button size="sm" variant="ghost" onClick={removeSelected} disabled={!selected.size}>
           <Trash2 className="h-4 w-4 mr-1 text-destructive" /> Hapus
         </Button>
         <Button size="sm" variant="secondary" className="ml-auto" onClick={sendReminder} disabled={sending || !selected.size}>
           <Send className="h-4 w-4 mr-2" /> Follow Up Reminder
+        </Button>
+        <Button size="sm" variant="secondary" onClick={sendReminderH} disabled={sending || !selected.size}>
+          <Send className="h-4 w-4 mr-2" /> Reminder Hari H
         </Button>
         <Button size="sm" onClick={send} disabled={sending || !selected.size}>
           {sending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
@@ -262,6 +290,8 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
             {r.last_status === "failed" && <Badge variant="destructive">Gagal</Badge>}
             {r.reminder_status === "sent" && <Badge className="bg-primary/15 text-primary hover:bg-primary/15">✓ Reminder terkirim</Badge>}
             {r.reminder_status === "failed" && <Badge variant="destructive" title={r.reminder_error || ""}>Reminder gagal</Badge>}
+            {r.reminder_h_status === "sent" && <Badge className="bg-primary/15 text-primary hover:bg-primary/15">✓ Hari H terkirim</Badge>}
+            {r.reminder_h_status === "failed" && <Badge variant="destructive" title={r.reminder_h_error || ""}>Hari H gagal</Badge>}
           </label>
         ))}
       </div>

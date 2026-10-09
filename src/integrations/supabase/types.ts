@@ -765,6 +765,9 @@ export type Database = {
           last_sent_at: string | null
           last_status: string | null
           reminder_error: string | null
+          reminder_h_error: string | null
+          reminder_h_sent_at: string | null
+          reminder_h_status: string | null
           reminder_sent_at: string | null
           reminder_status: string | null
           send_count: number
@@ -782,6 +785,9 @@ export type Database = {
           last_sent_at?: string | null
           last_status?: string | null
           reminder_error?: string | null
+          reminder_h_error?: string | null
+          reminder_h_sent_at?: string | null
+          reminder_h_status?: string | null
           reminder_sent_at?: string | null
           reminder_status?: string | null
           send_count?: number
@@ -799,6 +805,9 @@ export type Database = {
           last_sent_at?: string | null
           last_status?: string | null
           reminder_error?: string | null
+          reminder_h_error?: string | null
+          reminder_h_sent_at?: string | null
+          reminder_h_status?: string | null
           reminder_sent_at?: string | null
           reminder_status?: string | null
           send_count?: number
