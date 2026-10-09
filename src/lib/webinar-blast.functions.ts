@@ -62,11 +62,11 @@ export const blastWebinar = createServerFn({ method: "POST" })
 
     let sent = 0, failed = 0;
     for (const r of recips || []) {
-      if (isReminder && (r as any).reminder_status === "sent") continue;
+      if (isReminder && (r as any)[statusCol] === "sent") continue;
       const fail = async (msg: string, extra: Record<string, any> = {}) => {
         failed++;
         await admin.from("webinar_blast_recipients").update((isReminder
-          ? { reminder_status: "failed", reminder_error: msg, ...extra }
+          ? { [statusCol]: "failed", [errorCol]: msg, ...extra }
           : { last_status: "failed", last_error: msg, ...extra }) as any).eq("id", r.id);
       };
       const phone = normalizePhone(r.whatsapp_number);
