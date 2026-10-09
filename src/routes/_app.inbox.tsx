@@ -311,6 +311,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     if (filterUnread) list = list.filter((c) => (c.unread_count || 0) > 0);
     if (filterUnassigned) list = list.filter((c) => !c.assigned_agent_id);
     if (filterWebinar) list = list.filter((c) => webinarIds.convs.has(c.id) || webinarIds.contacts.has(c.contact_id));
+    else list = list.filter((c) => !webinarIds.convs.has(c.id) && !webinarIds.contacts.has(c.contact_id));
     if (filterStageId !== "__all__") {
       list = list.filter((c) => (c.contact?.stage_id || "__none__") === filterStageId);
     }
