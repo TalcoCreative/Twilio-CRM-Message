@@ -121,17 +121,32 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
     load();
   }
 
+  // Dikirim per 50 nomor supaya permintaan tidak terlalu lama (tidak ada batas total).
+  async function sendChunks(ids: string[], kind: "blast" | "reminder") {
+    let sent = 0, failed = 0;
+    const total = Math.ceil(ids.length / 50);
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      const part = Math.floor(i / 50) + 1;
+      if (total > 1) toast.loading(`Mengirim bagian ${part}/${total} (${chunk.length} nomor)…`, { id: "blast-progress" });
+      const r = await blast({ data: { recipient_ids: chunk, kind } });
+      sent += r.sent; failed += r.failed;
+    }
+    toast.dismiss("blast-progress");
+    return { sent, failed };
+  }
+
   async function send() {
     const ids = [...selected];
     if (!ids.length) return toast.error("Pilih nomor dulu");
-    if (ids.length > 50) return toast.error("Maksimal 50 nomor sekali blasting — kurangi pilihanmu");
     if (!confirm(`Kirim template webinar ke ${ids.length} nomor?`)) return;
     setSending(true);
     try {
-      const r = await blast({ data: { recipient_ids: ids } });
+      const r = await sendChunks(ids, "blast");
       toast.success(`Terkirim ${r.sent}, gagal ${r.failed}`);
       setSelected(new Set());
     } catch (e: any) {
+      toast.dismiss("blast-progress");
       toast.error(e?.message || "Gagal blasting");
     }
     setSending(false);
@@ -141,14 +156,14 @@ export function WebinarBlastPanel({ webinarId }: { webinarId: string }) {
   async function sendReminder() {
     const ids = [...selected].filter((id) => rows.find((r) => r.id === id)?.reminder_status !== "sent");
     if (!ids.length) return toast.error("Semua nomor terpilih sudah dikirim reminder");
-    if (ids.length > 50) return toast.error("Maksimal 50 nomor sekali kirim — kurangi pilihanmu");
     if (!confirm(`Kirim Follow Up Reminder ke ${ids.length} nomor? (nomor yang sudah dapat reminder dilewati)`)) return;
     setSending(true);
     try {
-      const r = await blast({ data: { recipient_ids: ids, kind: "reminder" } });
+      const r = await sendChunks(ids, "reminder");
       toast.success(`Reminder terkirim ${r.sent}, gagal ${r.failed}`);
       setSelected(new Set());
     } catch (e: any) {
+      toast.dismiss("blast-progress");
       toast.error(e?.message || "Gagal kirim reminder");
     }
     setSending(false);
