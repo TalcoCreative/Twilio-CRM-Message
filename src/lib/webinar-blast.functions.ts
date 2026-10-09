@@ -98,14 +98,14 @@ export const blastWebinar = createServerFn({ method: "POST" })
       if (!res.ok) {
         await fail(res.error, { contact_id: contact.id, conversation_id: conv.id });
         await admin.from("whatsapp_gateway_logs").insert({
-          direction: "OUTBOUND", level: "error", event: isReminder ? "webinar_reminder" : "webinar_blast", conversation_id: conv.id, to_number: phone,
+          direction: "OUTBOUND", level: "error", event: eventName, conversation_id: conv.id, to_number: phone,
           status: "failed", error_message: res.error, payload: { content_sid: contentSid, webinar_id: r.webinar_id, raw: res.raw },
         });
         continue;
       }
       const body = templateBody
         ? templateBody.replace(/\{\{\s*(\d+)\s*\}\}/g, (_m: string, k: string) => (vars as any)[k] ?? "")
-        : `${isReminder ? "[Reminder Webinar]" : "[Undangan Webinar]"} Halo ${name}`;
+        : `[${kindLabel} Webinar] Halo ${name}`;
       await admin.from("messages").insert({
         conversation_id: conv.id, direction: "OUTBOUND", type: "TEXT", content: body,
         sent_by_id: context.userId, fonnte_message_id: res.sid || null, status: "SENT",
@@ -114,7 +114,7 @@ export const blastWebinar = createServerFn({ method: "POST" })
         last_message_at: now, last_message_preview: body.slice(0, 160), last_replied_by_id: context.userId,
       }).eq("id", conv.id);
       await admin.from("webinar_blast_recipients").update((isReminder
-        ? { contact_id: contact.id, conversation_id: conv.id, reminder_status: "sent", reminder_error: null, reminder_sent_at: now }
+        ? { contact_id: contact.id, conversation_id: conv.id, [statusCol]: "sent", [errorCol]: null, [sentAtCol]: now }
         : {
           contact_id: contact.id, conversation_id: conv.id, last_status: "sent", last_error: null,
           last_sent_at: now, send_count: (r.send_count || 0) + 1,
@@ -129,7 +129,7 @@ export const blastWebinar = createServerFn({ method: "POST" })
         });
       }
       await admin.from("whatsapp_gateway_logs").insert({
-        direction: "OUTBOUND", level: "info", event: isReminder ? "webinar_reminder" : "webinar_blast", message_sid: res.sid || null,
+        direction: "OUTBOUND", level: "info", event: eventName, message_sid: res.sid || null,
         conversation_id: conv.id, to_number: phone, status: "sent",
         payload: { content_sid: contentSid, webinar_id: r.webinar_id, variables: vars },
       });
