@@ -1075,17 +1075,23 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const contactIdsInRange = Array.from(new Set(evs.map((e) => e.contact_id).filter(Boolean)));
       if (contactIdsInRange.length && frUserIds.size) {
         const CHUNK = 200;
+        const PARALLEL = 4;
         const priorFR: any[] = [];
-        for (let i = 0; i < contactIdsInRange.length; i += CHUNK) {
-          const slice = contactIdsInRange.slice(i, i + CHUNK);
-          const prior = await fetchAllRows<any>(() => supabase.from("audit_events")
-            .select("actor_id, contact_id, occurred_at, new_value")
-            .eq("event_type", "chat_out")
-            .in("contact_id", slice)
-            .in("actor_id", Array.from(frUserIds))
-            .lt("occurred_at", startISO)
-            .order("occurred_at", { ascending: true }));
-          if (prior) priorFR.push(...prior);
+        const slices: string[][] = [];
+        for (let i = 0; i < contactIdsInRange.length; i += CHUNK) slices.push(contactIdsInRange.slice(i, i + CHUNK));
+        const frIdList = Array.from(frUserIds);
+        // Tiap potongan berisi kontak berbeda, jadi aman diambil paralel;
+        // urutan per kontak tetap terjaga (occurred_at ASC).
+        for (let i = 0; i < slices.length; i += PARALLEL) {
+          const results = await Promise.all(slices.slice(i, i + PARALLEL).map((slice) =>
+            fetchAllRows<any>(() => supabase.from("audit_events")
+              .select("actor_id, contact_id, occurred_at, new_value")
+              .eq("event_type", "chat_out")
+              .in("contact_id", slice)
+              .in("actor_id", frIdList)
+              .lt("occurred_at", startISO)
+              .order("occurred_at", { ascending: true }))));
+          for (const prior of results) if (prior) priorFR.push(...prior);
         }
         for (const p of priorFR) {
           if (!p.contact_id || !p.actor_id) continue;
