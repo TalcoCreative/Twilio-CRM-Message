@@ -324,20 +324,20 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       const startDate = localDateKey(new Date(startISO));
       const endDate = localDateKey(new Date(endISO));
       const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes, productsRes] = await Promise.all([
-        fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, lead_temperature, stages(name, color)")),
-        fetchAllRows<any>(supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN")),
-        fetchAllRows<any>(supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO)),
-        fetchAllRows<any>(supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
+        fetchAllRows<any>(() => supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, lead_temperature, stages(name, color)")),
+        fetchAllRows<any>(() => supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN")),
+        fetchAllRows<any>(() => supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO)),
+        fetchAllRows<any>(() => supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
           .gte("sent_at", startISO).lte("sent_at", endISO).eq("direction", "OUTBOUND").not("response_seconds", "is", null)),
-        fetchAllRows<any>(supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
+        fetchAllRows<any>(() => supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
           .eq("action", "change_stage").gte("created_at", startISO).lte("created_at", endISO).order("created_at", { ascending: true })),
-        fetchAllRows<any>(supabase.from("conversations").select("id, contact_id, assigned_agent_id, created_at")),
-        fetchAllRows<any>(supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
+        fetchAllRows<any>(() => supabase.from("conversations").select("id, contact_id, assigned_agent_id, created_at")),
+        fetchAllRows<any>(() => supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
           .eq("action", "assign_agent").gte("created_at", startISO).lte("created_at", endISO)),
-        fetchAllRows<any>(supabase.from("agent_shifts").select("agent_id, shifts(start_time, end_time, days_of_week, is_active)")),
-        fetchAllRows<any>(supabase.from("fr_date_shifts" as any).select("agent_id, work_date, start_time, end_time")
+        fetchAllRows<any>(() => supabase.from("agent_shifts").select("agent_id, shifts(start_time, end_time, days_of_week, is_active)")),
+        fetchAllRows<any>(() => supabase.from("fr_date_shifts" as any).select("agent_id, work_date, start_time, end_time")
           .gte("work_date", startDate).lte("work_date", endDate)),
-        fetchAllRows<any>(supabase.from("products").select("id, name").order("sort_order")),
+        fetchAllRows<any>(() => supabase.from("products").select("id, name").order("sort_order")),
       ]);
       const productList = productsRes as any[];
       const productMap: Record<string, string> = {};
@@ -946,25 +946,25 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
     if (cachedFr) setData(cachedFr);
     (async () => {
       const [evs, invs, invSent, invResponded, convs, contacts] = await Promise.all([
-        fetchAllRows<any>(supabase.from("audit_events")
+        fetchAllRows<any>(() => supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, conversation_id, occurred_at, new_value, old_value")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)
           .order("occurred_at", { ascending: true })),
-        fetchAllRows<any>(supabase.from("assignment_invitations")
+        fetchAllRows<any>(() => supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, conversation_id, status, responded_at, created_at")
           .eq("status", "accepted")
           .gte("responded_at", startISO).lte("responded_at", endISO)),
-        fetchAllRows<any>(supabase.from("assignment_invitations")
+        fetchAllRows<any>(() => supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
           .gte("created_at", startISO).lte("created_at", endISO)),
-        fetchAllRows<any>(supabase.from("assignment_invitations")
+        fetchAllRows<any>(() => supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
           .in("status", ["accepted", "rejected"])
           .gte("responded_at", startISO).lte("responded_at", endISO)),
 
-        fetchAllRows<any>(supabase.from("conversations")
+        fetchAllRows<any>(() => supabase.from("conversations")
           .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id")),
-        fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id")),
+        fetchAllRows<any>(() => supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id")),
       ]);
       const contactById: Record<string, any> = {};
       (contacts || []).forEach((c: any) => { contactById[c.id] = c; });
@@ -1049,7 +1049,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         const priorFR: any[] = [];
         for (let i = 0; i < contactIdsInRange.length; i += CHUNK) {
           const slice = contactIdsInRange.slice(i, i + CHUNK);
-          const prior = await fetchAllRows<any>(supabase.from("audit_events")
+          const prior = await fetchAllRows<any>(() => supabase.from("audit_events")
             .select("actor_id, contact_id, occurred_at, new_value")
             .eq("event_type", "chat_out")
             .in("contact_id", slice)
@@ -1671,10 +1671,10 @@ function PerformanceTab({ startISO, endISO, profiles, scopeIds }: {
   useEffect(() => {
     (async () => {
       const [events, stages] = await Promise.all([
-        fetchAllRows<any>(supabase.from("audit_events")
+        fetchAllRows<any>(() => supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, new_value, occurred_at")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)),
-        fetchAllRows<any>(supabase.from("stages").select("id, name, order_index").order("order_index")),
+        fetchAllRows<any>(() => supabase.from("stages").select("id, name, order_index").order("order_index")),
       ]);
 
       const evs = (events || []) as any[];
