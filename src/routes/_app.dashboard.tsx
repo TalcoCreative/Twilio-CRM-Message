@@ -97,7 +97,7 @@ const rowsCache = new Map<string, { at: number; promise: Promise<any[]> }>();
 async function fetchAllRows<T>(make: () => any, pageSize = 1000, concurrency = 4): Promise<T[]> {
   const key = String(make().url);
   const hit = rowsCache.get(key);
-  if (hit && Date.now() - hit.at < ROWS_CACHE_MS) return hit.promise as Promise<T[]>;
+  if (hit && Date.now() - hit.at < ROWS_CACHE_MS) return hit.promise.then((r) => r.slice() as T[]);
 
   const fetchPage = async (p: number): Promise<T[]> => {
     const from = p * pageSize;
@@ -122,7 +122,7 @@ async function fetchAllRows<T>(make: () => any, pageSize = 1000, concurrency = 4
   })();
   rowsCache.set(key, { at: Date.now(), promise });
   promise.catch(() => rowsCache.delete(key));
-  return promise;
+  return promise.then((r) => r.slice());
 }
 
 function DashboardGate() {
