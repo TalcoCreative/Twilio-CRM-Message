@@ -90,8 +90,9 @@ const ROWS_CACHE_MS = 60_000;
 const rowsCache = new Map<string, { at: number; promise: Promise<any[]> }>();
 
 /**
- * Ambil semua baris (PostgREST dibatasi 1000/baris per request).
- * Halaman diambil paralel (8 sekaligus) dengan urutan stabil (id sebagai
+ * Ambil semua baris (PostgREST dibatasi 1000 baris per request).
+ * Halaman pertama sekaligus menghitung total baris, lalu sisa halaman
+ * diambil paralel (maks. 8 bersamaan). Urutan dibuat stabil (id sebagai
  * kunci kedua) supaya tidak ada baris dobel/terlewat antar halaman.
  */
 async function fetchAllRows<T>(make: () => any, pageSize = 1000, concurrency = 8): Promise<T[]> {
@@ -99,24 +100,41 @@ async function fetchAllRows<T>(make: () => any, pageSize = 1000, concurrency = 8
   const hit = rowsCache.get(key);
   if (hit && Date.now() - hit.at < ROWS_CACHE_MS) return hit.promise.then((r) => r.slice() as T[]);
 
-  const fetchPage = async (p: number): Promise<T[]> => {
+  const pageQuery = (p: number) => {
     const from = p * pageSize;
-    const { data, error } = await make().order("id", { ascending: true }).range(from, from + pageSize - 1);
+    return make().order("id", { ascending: true }).range(from, from + pageSize - 1);
+  };
+  const fetchPage = async (p: number): Promise<T[]> => {
+    const { data, error } = await pageQuery(p);
     if (error) throw error;
     return (data || []) as T[];
   };
   const promise = (async () => {
-    const first = await fetchPage(0);
+    const firstQ = pageQuery(0);
+    const prefer = firstQ.headers?.get?.("Prefer");
+    firstQ.headers?.set?.("Prefer", prefer ? `${prefer},count=exact` : "count=exact");
+    const { data, error, count } = await firstQ;
+    if (error) throw error;
+    const first = (data || []) as T[];
     if (first.length < pageSize) return first;
+
     const pages: T[][] = [first];
+    const totalPages = typeof count === "number" ? Math.ceil(count / pageSize) : 0;
     let next = 1;
-    for (let done = false; !done; ) {
-      const batch = await Promise.all(Array.from({ length: concurrency }, (_, i) => fetchPage(next + i)));
-      next += concurrency;
-      for (const chunk of batch) {
-        pages.push(chunk);
-        if (chunk.length < pageSize) { done = true; break; }
-      }
+    if (totalPages > 1) {
+      // Pool: selalu ada `concurrency` request berjalan sampai semua halaman selesai.
+      const worker = async () => {
+        while (next < totalPages) {
+          const p = next++;
+          pages[p] = await fetchPage(p);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(concurrency, totalPages - 1) }, worker));
+    }
+    // Lanjutkan kalau ternyata masih ada baris (mis. data baru masuk saat dimuat,
+    // atau total tidak diketahui).
+    while (pages[pages.length - 1].length >= pageSize) {
+      pages.push(await fetchPage(pages.length));
     }
     return pages.flat();
   })();
