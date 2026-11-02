@@ -347,6 +347,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
   const cacheKey = `dash:overview:${startISO}:${endISO}:${user?.id || ""}:${scopeIds ? Array.from(scopeIds).sort().join(",") : "all"}`;
 
   useEffect(() => {
+    let cancelled = false;
     const cached = getCached<any>(cacheKey);
     if (cached) setData(cached);
     (async () => {
@@ -606,6 +607,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       }).filter((a): a is any => !!a && (a.historicalTotal > 0 || a.currentCount > 0))
         .sort((a, b) => b.currentCount - a.currentCount || b.historicalUnique - a.historicalUnique);
 
+      if (cancelled) return;
       setData(setCached(cacheKey, {
         totalContacts: allContacts.length,               // Total Leads = seluruh /leads
         openConv: openConvsAll.length,                   // Percakapan Aktif = seluruh open
@@ -615,6 +617,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         agentLeadStats, contactMap, buckets,
       }));
     })();
+    return () => { cancelled = true; };
   }, [startISO, endISO, user?.id, profiles, scopeIds]);
 
   return (
@@ -971,6 +974,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
   const frCacheKey = `dash:fr:${startISO}:${endISO}:${slaGreen}:${slaYellow}:${selectedAgent || "all"}:${Array.from(frUserIds).sort().join(",")}`;
 
   useEffect(() => {
+    let cancelled = false;
     const cachedFr = getCached<any>(frCacheKey);
     if (cachedFr) setData(cachedFr);
     (async () => {
@@ -1374,6 +1378,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         ? closingDetails.filter((d) => d.touchers.length > 1 && d.touchers.includes(selectedAgent))
         : closingDetails.filter((d) => d.touchers.length > 1);
 
+      if (cancelled) return;
       setData(setCached(frCacheKey, {
         newLeads, answered: answeredContacts.size, totalResp, avgSec,
         avgFirstRespSec, unresponded, slaCount, slaPct, hourBuckets,
@@ -1390,6 +1395,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         nameById, contactById,
       }));
     })();
+    return () => { cancelled = true; };
   }, [startISO, endISO, slaGreen, slaYellow, profiles, selectedAgent, frUserIds]);
 
   const [drill, setDrill] = useState<{ kind: "first" | "continue" | "closing" | "share" | "invSent" | "invAccepted" | "invRejected" | "invPending" } | null>(null);
@@ -1704,6 +1710,7 @@ function PerformanceTab({ startISO, endISO, profiles, scopeIds }: {
   const [rows, setRows] = useState<any[]>([]);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       const [events, stages] = await Promise.all([
         fetchAllRows<any>(() => supabase.from("audit_events")
@@ -1765,8 +1772,10 @@ function PerformanceTab({ startISO, endISO, profiles, scopeIds }: {
         HOUR_BUCKETS.forEach((b, i) => { a[b.label] = r.buckets[i]; });
       });
 
+      if (cancelled) return;
       setRows(Object.values(perAgent).sort((a: any, b: any) => b.outbound - a.outbound));
     })();
+    return () => { cancelled = true; };
   }, [startISO, endISO, profiles, scopeIds]);
 
   const fmtTime = (s: number) => !s ? "-" : s < 60 ? `${s}d` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}j ${Math.floor((s % 3600) / 60)}m`;
