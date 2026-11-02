@@ -91,10 +91,10 @@ const rowsCache = new Map<string, { at: number; promise: Promise<any[]> }>();
 
 /**
  * Ambil semua baris (PostgREST dibatasi 1000/baris per request).
- * Halaman diambil paralel (4 sekaligus) dengan urutan stabil (id sebagai
+ * Halaman diambil paralel (8 sekaligus) dengan urutan stabil (id sebagai
  * kunci kedua) supaya tidak ada baris dobel/terlewat antar halaman.
  */
-async function fetchAllRows<T>(make: () => any, pageSize = 1000, concurrency = 4): Promise<T[]> {
+async function fetchAllRows<T>(make: () => any, pageSize = 1000, concurrency = 8): Promise<T[]> {
   const key = String(make().url);
   const hit = rowsCache.get(key);
   if (hit && Date.now() - hit.at < ROWS_CACHE_MS) return hit.promise.then((r) => r.slice() as T[]);
