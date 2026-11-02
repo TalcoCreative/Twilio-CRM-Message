@@ -84,16 +84,63 @@ const formatAppDateLabel = (date: Date, opts: Intl.DateTimeFormatOptions = {}) =
 const formatAppTimeLabel = (date: Date, opts: Intl.DateTimeFormatOptions = {}) =>
   date.toLocaleTimeString("id-ID", { timeZone: APP_TIME_ZONE, ...opts });
 
-async function fetchAllRows<T>(query: any, pageSize = 1000): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await query.range(from, from + pageSize - 1);
+// Hasil query dibagi pakai bersama selama 60 detik, supaya render ulang
+// (mis. daftar agent selesai dimuat) tidak mengulang download data yang sama.
+const ROWS_CACHE_MS = 60_000;
+const rowsCache = new Map<string, { at: number; promise: Promise<any[]> }>();
+
+/**
+ * Ambil semua baris (PostgREST dibatasi 1000 baris per request).
+ * Halaman pertama sekaligus menghitung total baris, lalu sisa halaman
+ * diambil paralel (maks. 8 bersamaan). Urutan dibuat stabil (id sebagai
+ * kunci kedua) supaya tidak ada baris dobel/terlewat antar halaman.
+ */
+async function fetchAllRows<T>(make: () => any, pageSize = 1000, concurrency = 8): Promise<T[]> {
+  const key = String(make().url);
+  const hit = rowsCache.get(key);
+  if (hit && Date.now() - hit.at < ROWS_CACHE_MS) return hit.promise.then((r) => r.slice() as T[]);
+
+  const pageQuery = (p: number) => {
+    const from = p * pageSize;
+    return make().order("id", { ascending: true }).range(from, from + pageSize - 1);
+  };
+  const fetchPage = async (p: number): Promise<T[]> => {
+    const { data, error } = await pageQuery(p);
     if (error) throw error;
-    const chunk = (data || []) as T[];
-    rows.push(...chunk);
-    if (chunk.length < pageSize) break;
-  }
-  return rows;
+    return (data || []) as T[];
+  };
+  const promise = (async () => {
+    const firstQ = pageQuery(0);
+    const prefer = firstQ.headers?.get?.("Prefer");
+    firstQ.headers?.set?.("Prefer", prefer ? `${prefer},count=exact` : "count=exact");
+    const { data, error, count } = await firstQ;
+    if (error) throw error;
+    const first = (data || []) as T[];
+    if (first.length < pageSize) return first;
+
+    const pages: T[][] = [first];
+    const totalPages = typeof count === "number" ? Math.ceil(count / pageSize) : 0;
+    let next = 1;
+    if (totalPages > 1) {
+      // Pool: selalu ada `concurrency` request berjalan sampai semua halaman selesai.
+      const worker = async () => {
+        while (next < totalPages) {
+          const p = next++;
+          pages[p] = await fetchPage(p);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(concurrency, totalPages - 1) }, worker));
+    }
+    // Lanjutkan kalau ternyata masih ada baris (mis. data baru masuk saat dimuat,
+    // atau total tidak diketahui).
+    while (pages[pages.length - 1].length >= pageSize) {
+      pages.push(await fetchPage(pages.length));
+    }
+    return pages.flat();
+  })();
+  rowsCache.set(key, { at: Date.now(), promise });
+  promise.catch(() => rowsCache.delete(key));
+  return promise.then((r) => r.slice());
 }
 
 function DashboardGate() {
@@ -318,26 +365,27 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
   const cacheKey = `dash:overview:${startISO}:${endISO}:${user?.id || ""}:${scopeIds ? Array.from(scopeIds).sort().join(",") : "all"}`;
 
   useEffect(() => {
+    let cancelled = false;
     const cached = getCached<any>(cacheKey);
     if (cached) setData(cached);
     (async () => {
       const startDate = localDateKey(new Date(startISO));
       const endDate = localDateKey(new Date(endISO));
       const [contacts, openConv, msgsList, respMsgs, stageLogs, allConvs, assignLogs, agentShiftsRes, frShRes, productsRes] = await Promise.all([
-        fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, lead_temperature, stages(name, color)")),
-        fetchAllRows<any>(supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN")),
-        fetchAllRows<any>(supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO)),
-        fetchAllRows<any>(supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
+        fetchAllRows<any>(() => supabase.from("contacts").select("id, full_name, whatsapp_number, estimated_revenue, stage_id, interested_product_id, assigned_agent_id, created_at, lead_temperature, stages(name, color)")),
+        fetchAllRows<any>(() => supabase.from("conversations").select("id, contact_id, assigned_agent_id, last_message_at, last_message_preview").eq("status", "OPEN")),
+        fetchAllRows<any>(() => supabase.from("messages").select("sent_at, direction, sent_by_id, conversation_id").gte("sent_at", startISO).lte("sent_at", endISO)),
+        fetchAllRows<any>(() => supabase.from("messages").select("sent_by_id, response_seconds, sent_at, conversation_id")
           .gte("sent_at", startISO).lte("sent_at", endISO).eq("direction", "OUTBOUND").not("response_seconds", "is", null)),
-        fetchAllRows<any>(supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
+        fetchAllRows<any>(() => supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
           .eq("action", "change_stage").gte("created_at", startISO).lte("created_at", endISO).order("created_at", { ascending: true })),
-        fetchAllRows<any>(supabase.from("conversations").select("id, contact_id, assigned_agent_id, created_at")),
-        fetchAllRows<any>(supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
+        fetchAllRows<any>(() => supabase.from("conversations").select("id, contact_id, assigned_agent_id, created_at")),
+        fetchAllRows<any>(() => supabase.from("activity_logs").select("entity_id, metadata, created_at, user_id")
           .eq("action", "assign_agent").gte("created_at", startISO).lte("created_at", endISO)),
-        fetchAllRows<any>(supabase.from("agent_shifts").select("agent_id, shifts(start_time, end_time, days_of_week, is_active)")),
-        fetchAllRows<any>(supabase.from("fr_date_shifts" as any).select("agent_id, work_date, start_time, end_time")
+        fetchAllRows<any>(() => supabase.from("agent_shifts").select("agent_id, shifts(start_time, end_time, days_of_week, is_active)")),
+        fetchAllRows<any>(() => supabase.from("fr_date_shifts" as any).select("agent_id, work_date, start_time, end_time")
           .gte("work_date", startDate).lte("work_date", endDate)),
-        fetchAllRows<any>(supabase.from("products").select("id, name").order("sort_order")),
+        fetchAllRows<any>(() => supabase.from("products").select("id, name").order("sort_order")),
       ]);
       const productList = productsRes as any[];
       const productMap: Record<string, string> = {};
@@ -577,6 +625,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
       }).filter((a): a is any => !!a && (a.historicalTotal > 0 || a.currentCount > 0))
         .sort((a, b) => b.currentCount - a.currentCount || b.historicalUnique - a.historicalUnique);
 
+      if (cancelled) return;
       setData(setCached(cacheKey, {
         totalContacts: allContacts.length,               // Total Leads = seluruh /leads
         openConv: openConvsAll.length,                   // Percakapan Aktif = seluruh open
@@ -586,6 +635,7 @@ function OverviewTab({ user, startISO, endISO, profiles, scopeIds }: {
         agentLeadStats, contactMap, buckets,
       }));
     })();
+    return () => { cancelled = true; };
   }, [startISO, endISO, user?.id, profiles, scopeIds]);
 
   return (
@@ -942,29 +992,30 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
   const frCacheKey = `dash:fr:${startISO}:${endISO}:${slaGreen}:${slaYellow}:${selectedAgent || "all"}:${Array.from(frUserIds).sort().join(",")}`;
 
   useEffect(() => {
+    let cancelled = false;
     const cachedFr = getCached<any>(frCacheKey);
     if (cachedFr) setData(cachedFr);
     (async () => {
       const [evs, invs, invSent, invResponded, convs, contacts] = await Promise.all([
-        fetchAllRows<any>(supabase.from("audit_events")
+        fetchAllRows<any>(() => supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, conversation_id, occurred_at, new_value, old_value")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)
           .order("occurred_at", { ascending: true })),
-        fetchAllRows<any>(supabase.from("assignment_invitations")
+        fetchAllRows<any>(() => supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, conversation_id, status, responded_at, created_at")
           .eq("status", "accepted")
           .gte("responded_at", startISO).lte("responded_at", endISO)),
-        fetchAllRows<any>(supabase.from("assignment_invitations")
+        fetchAllRows<any>(() => supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
           .gte("created_at", startISO).lte("created_at", endISO)),
-        fetchAllRows<any>(supabase.from("assignment_invitations")
+        fetchAllRows<any>(() => supabase.from("assignment_invitations")
           .select("id, from_user_id, to_user_id, contact_id, status, created_at, responded_at")
           .in("status", ["accepted", "rejected"])
           .gte("responded_at", startISO).lte("responded_at", endISO)),
 
-        fetchAllRows<any>(supabase.from("conversations")
+        fetchAllRows<any>(() => supabase.from("conversations")
           .select("id, contact_id, assigned_agent_id, unread_count, last_message_at, last_replied_by_id")),
-        fetchAllRows<any>(supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id")),
+        fetchAllRows<any>(() => supabase.from("contacts").select("id, full_name, whatsapp_number, stage_id, created_at, assigned_agent_id")),
       ]);
       const contactById: Record<string, any> = {};
       (contacts || []).forEach((c: any) => { contactById[c.id] = c; });
@@ -1046,17 +1097,23 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const contactIdsInRange = Array.from(new Set(evs.map((e) => e.contact_id).filter(Boolean)));
       if (contactIdsInRange.length && frUserIds.size) {
         const CHUNK = 200;
+        const PARALLEL = 8;
         const priorFR: any[] = [];
-        for (let i = 0; i < contactIdsInRange.length; i += CHUNK) {
-          const slice = contactIdsInRange.slice(i, i + CHUNK);
-          const prior = await fetchAllRows<any>(supabase.from("audit_events")
-            .select("actor_id, contact_id, occurred_at, new_value")
-            .eq("event_type", "chat_out")
-            .in("contact_id", slice)
-            .in("actor_id", Array.from(frUserIds))
-            .lt("occurred_at", startISO)
-            .order("occurred_at", { ascending: true }));
-          if (prior) priorFR.push(...prior);
+        const slices: string[][] = [];
+        for (let i = 0; i < contactIdsInRange.length; i += CHUNK) slices.push(contactIdsInRange.slice(i, i + CHUNK));
+        const frIdList = Array.from(frUserIds);
+        // Tiap potongan berisi kontak berbeda, jadi aman diambil paralel;
+        // urutan per kontak tetap terjaga (occurred_at ASC).
+        for (let i = 0; i < slices.length; i += PARALLEL) {
+          const results = await Promise.all(slices.slice(i, i + PARALLEL).map((slice) =>
+            fetchAllRows<any>(() => supabase.from("audit_events")
+              .select("actor_id, contact_id, occurred_at, new_value")
+              .eq("event_type", "chat_out")
+              .in("contact_id", slice)
+              .in("actor_id", frIdList)
+              .lt("occurred_at", startISO)
+              .order("occurred_at", { ascending: true }))));
+          for (const prior of results) if (prior) priorFR.push(...prior);
         }
         for (const p of priorFR) {
           if (!p.contact_id || !p.actor_id) continue;
@@ -1339,6 +1396,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         ? closingDetails.filter((d) => d.touchers.length > 1 && d.touchers.includes(selectedAgent))
         : closingDetails.filter((d) => d.touchers.length > 1);
 
+      if (cancelled) return;
       setData(setCached(frCacheKey, {
         newLeads, answered: answeredContacts.size, totalResp, avgSec,
         avgFirstRespSec, unresponded, slaCount, slaPct, hourBuckets,
@@ -1355,6 +1413,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
         nameById, contactById,
       }));
     })();
+    return () => { cancelled = true; };
   }, [startISO, endISO, slaGreen, slaYellow, profiles, selectedAgent, frUserIds]);
 
   const [drill, setDrill] = useState<{ kind: "first" | "continue" | "closing" | "share" | "invSent" | "invAccepted" | "invRejected" | "invPending" } | null>(null);
@@ -1669,12 +1728,13 @@ function PerformanceTab({ startISO, endISO, profiles, scopeIds }: {
   const [rows, setRows] = useState<any[]>([]);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       const [events, stages] = await Promise.all([
-        fetchAllRows<any>(supabase.from("audit_events")
+        fetchAllRows<any>(() => supabase.from("audit_events")
           .select("event_type, actor_id, contact_id, new_value, occurred_at")
           .gte("occurred_at", startISO).lte("occurred_at", endISO)),
-        fetchAllRows<any>(supabase.from("stages").select("id, name, order_index").order("order_index")),
+        fetchAllRows<any>(() => supabase.from("stages").select("id, name, order_index").order("order_index")),
       ]);
 
       const evs = (events || []) as any[];
@@ -1730,8 +1790,10 @@ function PerformanceTab({ startISO, endISO, profiles, scopeIds }: {
         HOUR_BUCKETS.forEach((b, i) => { a[b.label] = r.buckets[i]; });
       });
 
+      if (cancelled) return;
       setRows(Object.values(perAgent).sort((a: any, b: any) => b.outbound - a.outbound));
     })();
+    return () => { cancelled = true; };
   }, [startISO, endISO, profiles, scopeIds]);
 
   const fmtTime = (s: number) => !s ? "-" : s < 60 ? `${s}d` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}j ${Math.floor((s % 3600) / 60)}m`;
