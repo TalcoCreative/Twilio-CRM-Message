@@ -1097,7 +1097,7 @@ function FirstResponseTab({ startISO, endISO, profiles, scopeIds, frUserIds }: {
       const contactIdsInRange = Array.from(new Set(evs.map((e) => e.contact_id).filter(Boolean)));
       if (contactIdsInRange.length && frUserIds.size) {
         const CHUNK = 200;
-        const PARALLEL = 4;
+        const PARALLEL = 8;
         const priorFR: any[] = [];
         const slices: string[][] = [];
         for (let i = 0; i < contactIdsInRange.length; i += CHUNK) slices.push(contactIdsInRange.slice(i, i + CHUNK));
