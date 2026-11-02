@@ -84,16 +84,45 @@ const formatAppDateLabel = (date: Date, opts: Intl.DateTimeFormatOptions = {}) =
 const formatAppTimeLabel = (date: Date, opts: Intl.DateTimeFormatOptions = {}) =>
   date.toLocaleTimeString("id-ID", { timeZone: APP_TIME_ZONE, ...opts });
 
-async function fetchAllRows<T>(query: any, pageSize = 1000): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await query.range(from, from + pageSize - 1);
+// Hasil query dibagi pakai bersama selama 60 detik, supaya render ulang
+// (mis. daftar agent selesai dimuat) tidak mengulang download data yang sama.
+const ROWS_CACHE_MS = 60_000;
+const rowsCache = new Map<string, { at: number; promise: Promise<any[]> }>();
+
+/**
+ * Ambil semua baris (PostgREST dibatasi 1000/baris per request).
+ * Halaman diambil paralel (4 sekaligus) dengan urutan stabil (id sebagai
+ * kunci kedua) supaya tidak ada baris dobel/terlewat antar halaman.
+ */
+async function fetchAllRows<T>(make: () => any, pageSize = 1000, concurrency = 4): Promise<T[]> {
+  const key = String(make().url);
+  const hit = rowsCache.get(key);
+  if (hit && Date.now() - hit.at < ROWS_CACHE_MS) return hit.promise as Promise<T[]>;
+
+  const fetchPage = async (p: number): Promise<T[]> => {
+    const from = p * pageSize;
+    const { data, error } = await make().order("id", { ascending: true }).range(from, from + pageSize - 1);
     if (error) throw error;
-    const chunk = (data || []) as T[];
-    rows.push(...chunk);
-    if (chunk.length < pageSize) break;
-  }
-  return rows;
+    return (data || []) as T[];
+  };
+  const promise = (async () => {
+    const first = await fetchPage(0);
+    if (first.length < pageSize) return first;
+    const pages: T[][] = [first];
+    let next = 1;
+    for (let done = false; !done; ) {
+      const batch = await Promise.all(Array.from({ length: concurrency }, (_, i) => fetchPage(next + i)));
+      next += concurrency;
+      for (const chunk of batch) {
+        pages.push(chunk);
+        if (chunk.length < pageSize) { done = true; break; }
+      }
+    }
+    return pages.flat();
+  })();
+  rowsCache.set(key, { at: Date.now(), promise });
+  promise.catch(() => rowsCache.delete(key));
+  return promise;
 }
 
 function DashboardGate() {
