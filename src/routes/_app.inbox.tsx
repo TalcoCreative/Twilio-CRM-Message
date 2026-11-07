@@ -86,13 +86,37 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
   const convCacheKey = `inbox:convs:${mineOnly ? user?.id ?? "none" : "team"}`;
 
+  // Cegah reload penuh bertumpuk: realtime bisa memicu puluhan event per menit.
+  const loadingConvsRef = useRef(false);
+  const reloadQueuedRef = useRef(false);
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasConvsRef = useRef(false);
+  function scheduleReload(delay = 4000) {
+    if (reloadTimerRef.current) return;
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null;
+      loadConversations();
+    }, delay);
+  }
+  useEffect(() => () => { if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current); }, []);
+
   async function loadConversations() {
     // Kalau My Inbox tapi user belum ready, jangan fetch — hindari flash "semua chat".
     if (mineOnly && !user) { setConversations([]); return; }
+    if (loadingConvsRef.current) { reloadQueuedRef.current = true; return; }
+    loadingConvsRef.current = true;
+    try { await loadConversationsInner(); } finally {
+      loadingConvsRef.current = false;
+      if (reloadQueuedRef.current) { reloadQueuedRef.current = false; scheduleReload(1500); }
+    }
+  }
+
+  async function loadConversationsInner() {
     const pageSize = 1000;
     let from = 0;
     const all: any[] = [];
-    // Halaman pertama langsung dirender, sisanya menyusul di belakang layar.
+    // Kalau daftar sudah tampil, jangan ganti sebagian-sebagian (bikin daftar "lompat").
+    const progressive = !hasConvsRef.current;
     while (true) {
       let q = supabase
         .from("conversations")
@@ -103,11 +127,13 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       const { data, error } = await q;
       if (error || !data || data.length === 0) break;
       all.push(...data);
-      setConversations(all.slice() as any);
+      if (progressive) setConversations(all.slice() as any);
       if (data.length < pageSize) break;
       from += pageSize;
     }
+    if (all.length === 0 && hasConvsRef.current) return; // gagal jaringan — pertahankan data lama
     setCached(convCacheKey, all);
+    hasConvsRef.current = all.length > 0;
     setConversations(all as any);
   }
 
@@ -148,6 +174,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   useEffect(() => {
     // Tampilkan data cache dulu (instan), baru refresh di belakang layar.
     const cachedConvs = getCached<any[]>(convCacheKey);
+    hasConvsRef.current = !!cachedConvs?.length;
     if (cachedConvs) setConversations(cachedConvs as any);
     const cachedMeta = getCached<any>("inbox:meta");
     if (cachedMeta) applyMeta(cachedMeta);
@@ -156,9 +183,9 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   }, [mineOnly, user?.id]);
 
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === "visible") loadConversations(); };
+    const refresh = () => { if (document.visibilityState === "visible") scheduleReload(500); };
     // Realtime yang jadi sumber utama; polling penuh cukup jarang agar UI ringan.
-    const interval = window.setInterval(refresh, 30_000);
+    const interval = window.setInterval(refresh, 90_000);
     const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", onVisible);
@@ -170,11 +197,17 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   }, [mineOnly, user?.id]);
 
   // Auto-select conversation from ?c= query param
+  // Hanya sekali saat halaman dibuka — dulu ini jalan tiap jumlah chat berubah,
+  // sehingga chat yang sedang dibuka bisa "loncat" balik ke chat dari link.
+  const deepLinkDoneRef = useRef(false);
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || deepLinkDoneRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const c = params.get("c");
-    if (c) setActiveId(c);
+    if (!c) { deepLinkDoneRef.current = true; return; }
+    if (conversations.length === 0) return;
+    deepLinkDoneRef.current = true;
+    setActiveId(c);
   }, [conversations.length]);
 
   // Online heartbeat — update last_seen_at every 60s
@@ -191,15 +224,42 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
   useEffect(() => {
     const ch = supabase.channel("inbox-all-" + (mineOnly ? "mine" : "team"))
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadConversations())
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "contacts" }, () => loadConversations())
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, (payload: any) => {
+        // UPDATE: tambal baris di tempat (tanpa unduh ulang ribuan chat).
+        if (payload.eventType === "UPDATE" && payload.new?.id) {
+          const n = payload.new as any;
+          setConversations((prev) => {
+            const idx = prev.findIndex((c) => c.id === n.id);
+            const mineMismatch = mineOnly && user && n.assigned_agent_id !== user.id;
+            if (idx < 0) { if (!mineMismatch) scheduleReload(); return prev; }
+            if (mineMismatch) return prev.filter((c) => c.id !== n.id);
+            const copy = prev.slice();
+            copy[idx] = { ...prev[idx], ...n, contact: prev[idx].contact };
+            return copy;
+          });
+          return;
+        }
+        if (payload.eventType === "DELETE" && payload.old?.id) {
+          setConversations((prev) => prev.filter((c) => c.id !== payload.old.id));
+          return;
+        }
+        scheduleReload();
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "contacts" }, (payload: any) => {
+        const c = payload.new as any;
+        if (!c?.id) return;
+        setConversations((prev) => {
+          if (!prev.some((cv) => cv.contact_id === c.id)) return prev;
+          return prev.map((cv) => cv.contact_id === c.id ? { ...cv, contact: { ...(cv.contact || {}), ...c } as any } : cv);
+        });
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "templates" }, () => loadMeta())
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
         const m = payload.new as Message;
         // Patch conversation list instantly (before conversations UPDATE arrives)
         setConversations((prev) => {
           const idx = prev.findIndex((c) => c.id === m.conversation_id);
-          if (idx < 0) { loadConversations(); return prev; }
+          if (idx < 0) { scheduleReload(); return prev; }
           const preview = m.type === "TEXT" || m.type === "INTERNAL_NOTE" ? (m.content || "") : `[${m.type.toLowerCase()}]`;
           const isActive = activeIdRef.current === m.conversation_id;
           const updated = {
@@ -238,10 +298,17 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       const { data } = await supabase.from("messages").select("*")
         .eq("conversation_id", activeId).order("sent_at", { ascending: true });
       if (!alive) return;
-      const rows = ((data as any) || []) as Message[];
+      if (!data) return; // gagal jaringan — jangan kosongkan chat
+      const rows = (data as any) as Message[];
       setCached(`inbox:msgs:${activeId}`, rows);
-      setMessages(rows);
-      await supabase.from("conversations").update({ unread_count: 0 }).eq("id", activeId);
+      // Hanya ganti kalau memang ada perubahan, supaya chat tidak re-render tiap 20 detik.
+      const sig = (list: Message[]) => list.map((m) => `${m.id}:${m.status}`).join("|");
+      setMessages((prev) => {
+        const pending = prev.filter((m) => m.id.startsWith("tmp-") && !rows.some((r) => r.content === m.content && r.direction === m.direction));
+        const next = pending.length ? [...rows, ...pending] : rows;
+        return sig(prev) === sig(next) ? prev : next;
+      });
+      await supabase.from("conversations").update({ unread_count: 0 }).eq("id", activeId).gt("unread_count", 0);
     };
     loadActiveMessages();
     // Realtime sudah menangani pesan baru; polling hanya jaring pengaman.
