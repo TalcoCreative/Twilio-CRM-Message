@@ -86,13 +86,37 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
   const convCacheKey = `inbox:convs:${mineOnly ? user?.id ?? "none" : "team"}`;
 
+  // Cegah reload penuh bertumpuk: realtime bisa memicu puluhan event per menit.
+  const loadingConvsRef = useRef(false);
+  const reloadQueuedRef = useRef(false);
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasConvsRef = useRef(false);
+  function scheduleReload(delay = 4000) {
+    if (reloadTimerRef.current) return;
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null;
+      loadConversations();
+    }, delay);
+  }
+  useEffect(() => () => { if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current); }, []);
+
   async function loadConversations() {
     // Kalau My Inbox tapi user belum ready, jangan fetch — hindari flash "semua chat".
     if (mineOnly && !user) { setConversations([]); return; }
+    if (loadingConvsRef.current) { reloadQueuedRef.current = true; return; }
+    loadingConvsRef.current = true;
+    try { await loadConversationsInner(); } finally {
+      loadingConvsRef.current = false;
+      if (reloadQueuedRef.current) { reloadQueuedRef.current = false; scheduleReload(1500); }
+    }
+  }
+
+  async function loadConversationsInner() {
     const pageSize = 1000;
     let from = 0;
     const all: any[] = [];
-    // Halaman pertama langsung dirender, sisanya menyusul di belakang layar.
+    // Kalau daftar sudah tampil, jangan ganti sebagian-sebagian (bikin daftar "lompat").
+    const progressive = !hasConvsRef.current;
     while (true) {
       let q = supabase
         .from("conversations")
@@ -103,11 +127,13 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       const { data, error } = await q;
       if (error || !data || data.length === 0) break;
       all.push(...data);
-      setConversations(all.slice() as any);
+      if (progressive) setConversations(all.slice() as any);
       if (data.length < pageSize) break;
       from += pageSize;
     }
+    if (all.length === 0 && hasConvsRef.current) return; // gagal jaringan — pertahankan data lama
     setCached(convCacheKey, all);
+    hasConvsRef.current = all.length > 0;
     setConversations(all as any);
   }
 
@@ -148,6 +174,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   useEffect(() => {
     // Tampilkan data cache dulu (instan), baru refresh di belakang layar.
     const cachedConvs = getCached<any[]>(convCacheKey);
+    hasConvsRef.current = !!cachedConvs?.length;
     if (cachedConvs) setConversations(cachedConvs as any);
     const cachedMeta = getCached<any>("inbox:meta");
     if (cachedMeta) applyMeta(cachedMeta);
@@ -156,9 +183,9 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   }, [mineOnly, user?.id]);
 
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === "visible") loadConversations(); };
+    const refresh = () => { if (document.visibilityState === "visible") scheduleReload(500); };
     // Realtime yang jadi sumber utama; polling penuh cukup jarang agar UI ringan.
-    const interval = window.setInterval(refresh, 30_000);
+    const interval = window.setInterval(refresh, 90_000);
     const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", onVisible);
@@ -170,11 +197,17 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   }, [mineOnly, user?.id]);
 
   // Auto-select conversation from ?c= query param
+  // Hanya sekali saat halaman dibuka — dulu ini jalan tiap jumlah chat berubah,
+  // sehingga chat yang sedang dibuka bisa "loncat" balik ke chat dari link.
+  const deepLinkDoneRef = useRef(false);
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || deepLinkDoneRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const c = params.get("c");
-    if (c) setActiveId(c);
+    if (!c) { deepLinkDoneRef.current = true; return; }
+    if (conversations.length === 0) return;
+    deepLinkDoneRef.current = true;
+    setActiveId(c);
   }, [conversations.length]);
 
   // Online heartbeat — update last_seen_at every 60s
@@ -191,15 +224,42 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
   useEffect(() => {
     const ch = supabase.channel("inbox-all-" + (mineOnly ? "mine" : "team"))
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadConversations())
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "contacts" }, () => loadConversations())
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, (payload: any) => {
+        // UPDATE: tambal baris di tempat (tanpa unduh ulang ribuan chat).
+        if (payload.eventType === "UPDATE" && payload.new?.id) {
+          const n = payload.new as any;
+          setConversations((prev) => {
+            const idx = prev.findIndex((c) => c.id === n.id);
+            const mineMismatch = mineOnly && user && n.assigned_agent_id !== user.id;
+            if (idx < 0) { if (!mineMismatch) scheduleReload(); return prev; }
+            if (mineMismatch) return prev.filter((c) => c.id !== n.id);
+            const copy = prev.slice();
+            copy[idx] = { ...prev[idx], ...n, contact: prev[idx].contact };
+            return copy;
+          });
+          return;
+        }
+        if (payload.eventType === "DELETE" && payload.old?.id) {
+          setConversations((prev) => prev.filter((c) => c.id !== payload.old.id));
+          return;
+        }
+        scheduleReload();
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "contacts" }, (payload: any) => {
+        const c = payload.new as any;
+        if (!c?.id) return;
+        setConversations((prev) => {
+          if (!prev.some((cv) => cv.contact_id === c.id)) return prev;
+          return prev.map((cv) => cv.contact_id === c.id ? { ...cv, contact: { ...(cv.contact || {}), ...c } as any } : cv);
+        });
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "templates" }, () => loadMeta())
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
         const m = payload.new as Message;
         // Patch conversation list instantly (before conversations UPDATE arrives)
         setConversations((prev) => {
           const idx = prev.findIndex((c) => c.id === m.conversation_id);
-          if (idx < 0) { loadConversations(); return prev; }
+          if (idx < 0) { scheduleReload(); return prev; }
           const preview = m.type === "TEXT" || m.type === "INTERNAL_NOTE" ? (m.content || "") : `[${m.type.toLowerCase()}]`;
           const isActive = activeIdRef.current === m.conversation_id;
           const updated = {
@@ -220,7 +280,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
             if (tempIdx >= 0) { const c = prev.slice(); c[tempIdx] = m; return c; }
             return [...prev, m];
           });
-          supabase.from("conversations").update({ unread_count: 0 }).eq("id", m.conversation_id).then(() => {});
+          supabase.from("conversations").update({ unread_count: 0 }).eq("id", m.conversation_id).gt("unread_count", 0).then(() => {});
         }
       })
       .subscribe();
@@ -238,10 +298,17 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
       const { data } = await supabase.from("messages").select("*")
         .eq("conversation_id", activeId).order("sent_at", { ascending: true });
       if (!alive) return;
-      const rows = ((data as any) || []) as Message[];
+      if (!data) return; // gagal jaringan — jangan kosongkan chat
+      const rows = (data as any) as Message[];
       setCached(`inbox:msgs:${activeId}`, rows);
-      setMessages(rows);
-      await supabase.from("conversations").update({ unread_count: 0 }).eq("id", activeId);
+      // Hanya ganti kalau memang ada perubahan, supaya chat tidak re-render tiap 20 detik.
+      const sig = (list: Message[]) => list.map((m) => `${m.id}:${m.status}`).join("|");
+      setMessages((prev) => {
+        const pending = prev.filter((m) => m.id.startsWith("tmp-") && !rows.some((r) => r.content === m.content && r.direction === m.direction));
+        const next = pending.length ? [...rows, ...pending] : rows;
+        return sig(prev) === sig(next) ? prev : next;
+      });
+      await supabase.from("conversations").update({ unread_count: 0 }).eq("id", activeId).gt("unread_count", 0);
     };
     loadActiveMessages();
     // Realtime sudah menangani pesan baru; polling hanya jaring pengaman.
@@ -346,7 +413,237 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     return "danger";
   }
 
+  // Hanya render sebagian daftar chat; sisanya dimuat saat di-scroll ke bawah.
+  const PAGE = 40;
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+  useEffect(() => { setVisibleCount(PAGE); }, [search, filterUnread, filterUnassigned, filterWebinar, filterStageId, filterAgentId, filterTemp, sortBy, mineOnly]);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setVisibleCount((v) => v + PAGE);
+    }, { rootMargin: "300px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visibleCount, filtered.length]);
+
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+
+  // Daftar chat di-memo supaya mengetik di kolom pesan tidak me-render ulang semua baris.
+  const listRows = useMemo(() => (
+filtered.slice(0, visibleCount).map((c) => {
+              const stage = stages.find((s) => s.id === c.contact?.stage_id);
+              const sla = slaTone(c);
+              const slaCls = sla === "ok" ? "border-l-emerald-500" : sla === "warn" ? "border-l-amber-500" : sla === "danger" ? "border-l-rose-500" : "border-l-transparent";
+              const temp = c.contact?.lead_temperature || null;
+              // Warna bar list mengikuti prioritas lead, template baris tetap sama.
+              const tempStyle = temp
+                ? { borderLeftColor: tempColor(temp), backgroundColor: tempColor(temp) + "0F" }
+                : undefined;
+              return (
+                <button key={c.id}
+                  onClick={() => { if (longPressFired.current) { longPressFired.current = false; return; } setActiveId(c.id); }}
+                  onPointerDown={() => startLongPress(c.id)}
+                  onPointerUp={cancelLongPress}
+                  onPointerLeave={cancelLongPress}
+                  onPointerCancel={cancelLongPress}
+                  onContextMenu={(e) => { e.preventDefault(); markUnread(c.id); }}
+                  className={cn("w-full text-left px-4 py-3 border-b border-l-4 hover:bg-accent/60 flex flex-col gap-1 transition-colors select-none touch-none",
+                    !temp && slaCls,
+                    activeId === c.id && "bg-accent")}
+                  style={activeId === c.id ? undefined : tempStyle}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm truncate">
+                      {c.contact?.full_name || "Tanpa nama"}
+                    </span>
+                    <span className="flex items-center gap-1 shrink-0">
+                      <span
+                        role="button"
+                        title={c.unread_count > 0 ? "Tandai sudah dibaca" : "Tandai belum dibaca (atau tahan)"}
+                        onClick={(e) => { e.stopPropagation(); markUnread(c.id); }}
+                        className="opacity-60 hover:opacity-100 p-1 rounded hover:bg-background/60 cursor-pointer">
+                        <MailOpen className="size-3" />
+                      </span>
+                      {c.unread_count > 0 && (
+                        <span className="text-[10px] bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 glow-primary">
+                          {c.unread_count}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] text-muted-foreground">{c.contact?.whatsapp_number}</div>
+                  <div className="text-xs text-muted-foreground truncate">{c.last_message_preview || "—"}</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {c.contact?.lead_temperature && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1"
+                        style={{ backgroundColor: tempColor(c.contact.lead_temperature) + "22", color: tempColor(c.contact.lead_temperature) }}>
+                        <Flame className="size-2.5" /> {tempLabel(c.contact.lead_temperature)}
+                      </span>
+                    )}
+                    {isWebinarConv(c) && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-blue-600 text-white inline-flex items-center gap-1">
+                        <Video className="size-2.5" /> WEBINAR
+                      </span>
+                    )}
+                    {stage && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                        style={{ backgroundColor: (stage.color || "#888") + "20", color: stage.color || "inherit" }}>
+                        {stage.name}
+                      </span>
+                    )}
+                    {c.assigned_agent_id ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                        <UserIcon className="size-2.5" /> {agentName(c.assigned_agent_id)}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                        Belum ditugaskan
+                      </span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground ml-auto">
+                      {c.last_message_at && formatDistanceToNow(new Date(c.last_message_at), { addSuffix: true, locale: idLocale })}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+  ), [filtered, visibleCount, activeId, stages, webinarIds, profiles]);
+
   const active = conversations.find((c) => c.id === activeId);
+  // Bubble chat di-memo: mengetik tidak me-render ulang semua pesan.
+  const activeContactName = active?.contact?.full_name;
+  const messageRows = useMemo(() => {
+    if (!active) return null;
+    return messages.map((m, idx) => {
+                  const prev = idx > 0 ? messages[idx - 1] : null;
+                  const curDate = new Date(m.sent_at);
+                  const prevDate = prev ? new Date(prev.sent_at) : null;
+                  const sameDay = prevDate &&
+                    curDate.getFullYear() === prevDate.getFullYear() &&
+                    curDate.getMonth() === prevDate.getMonth() &&
+                    curDate.getDate() === prevDate.getDate();
+                  const showSep = !sameDay;
+                  const today = new Date();
+                  const yest = new Date(); yest.setDate(today.getDate() - 1);
+                  const isSameDate = (a: Date, b: Date) =>
+                    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+                  let sepLabel = "";
+                  if (showSep) {
+                    if (isSameDate(curDate, today)) sepLabel = "Hari ini";
+                    else if (isSameDate(curDate, yest)) sepLabel = "Kemarin";
+                    else {
+                      const diffDays = Math.floor((today.getTime() - curDate.getTime()) / 86400000);
+                      sepLabel = diffDays < 7
+                        ? curDate.toLocaleDateString("id-ID", { weekday: "long" })
+                        : curDate.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: curDate.getFullYear() !== today.getFullYear() ? "numeric" : undefined });
+                    }
+                  }
+                  const separator = showSep ? (
+                    <div key={`sep-${m.id}`} className="sticky top-2 z-10 flex justify-center my-2">
+                      <span className="text-[11px] font-medium px-3 py-1 rounded-full bg-background/80 backdrop-blur border shadow-sm text-muted-foreground">
+                        {sepLabel}
+                      </span>
+                    </div>
+                  ) : null;
+
+                  if (m.type === "INTERNAL_NOTE") {
+                    return (
+                      <React.Fragment key={m.id}>
+                        {separator}
+                        <div className="flex justify-center">
+                          <div className="max-w-[85%] rounded-xl border border-amber-400/50 bg-amber-100/70 dark:bg-amber-500/10 px-3 py-2 text-xs shadow-sm">
+                            <div className="flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 mb-1">
+                              <StickyNote className="size-3" />
+                              Catatan Internal · {agentName(m.sent_by_id)}
+                            </div>
+                            <div className="whitespace-pre-wrap break-words text-amber-900 dark:text-amber-100">{m.content}</div>
+                            <div className="text-[10px] opacity-60 mt-1 text-right">
+                              {curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    );
+                  }
+                  const out = m.direction === "OUTBOUND";
+                  // Label pengirim STRICT berdasarkan siapa yang mengetik/mengirim pesan
+                  // (messages.sent_by_id). Jangan pernah fallback ke assigned_agent atau
+                  // last_replied_by — kalau null artinya dikirim oleh sistem/bot.
+                  const senderLabel = out
+                    ? (m.sent_by_id ? agentName(m.sent_by_id) : "Sistem")
+                    : (active.contact?.full_name || "Pelanggan");
+                  const isSticker = m.type === "STICKER";
+                  return (
+                    <React.Fragment key={m.id}>
+                      {separator}
+                      <div className={cn("flex flex-col gap-0.5", out ? "items-end" : "items-start")}>
+                        <span className="text-[10px] px-1 text-muted-foreground">
+                          {senderLabel}
+                        </span>
+                        {isSticker && m.media_url ? (
+                          <div className="max-w-[40%]">
+                            <img src={m.media_url} alt="sticker" className="max-h-40 object-contain" />
+                            <div className="text-[10px] opacity-60 mt-0.5 text-right">
+                              {curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          </div>
+                        ) : (
+                        <div className={cn("max-w-[75%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words shadow-sm",
+                          out ? "bg-chat-out text-chat-out-foreground rounded-br-sm"
+                              : "bg-chat-in text-chat-in-foreground border rounded-bl-sm")}>
+                          {m.media_url && m.type === "IMAGE" && (
+                            <a href={m.media_url} target="_blank" rel="noreferrer" className="block mb-1">
+                              <img src={m.media_url} alt="attachment" className="max-h-64 rounded-lg object-cover" />
+                            </a>
+                          )}
+                          {m.media_url && m.type === "VIDEO" && (
+                            <video src={m.media_url} controls className="max-h-64 rounded-lg mb-1 max-w-full" />
+                          )}
+                          {m.media_url && (m.type === "AUDIO" || m.type === "VOICE") && (
+                            <div className="flex items-center gap-2 mb-1">
+                              {m.type === "VOICE" && <Mic className="size-3.5 shrink-0 opacity-70" />}
+                              <audio src={m.media_url} controls className="max-w-full" />
+                            </div>
+                          )}
+                          {m.media_url && m.type === "DOCUMENT" && (
+                            <a href={m.media_url} target="_blank" rel="noreferrer"
+                              className="flex items-center gap-2 mb-1 px-2 py-1.5 rounded-lg bg-background/40 border border-white/20 hover:bg-background/60 text-xs">
+                              <FileText className="size-4 shrink-0" />
+                              <span className="truncate">{m.content || "Dokumen"}</span>
+                            </a>
+                          )}
+                          {(!m.media_url || m.type === "TEXT") && m.content}
+                          {m.media_url && m.type !== "TEXT" && m.content && m.content !== "(attachment)" && (
+                            <div className="mt-1">{m.content}</div>
+                          )}
+                          <div className="text-[10px] opacity-60 mt-1 text-right flex items-center justify-end gap-1">
+                            {out && m.status === "FAILED" && (
+                              <span className="text-rose-500 font-medium">Gagal</span>
+                            )}
+                            {out && m.status === "SENT" && <span>✓</span>}
+                            {out && m.status === "DELIVERED" && <span className="text-sky-500">✓✓</span>}
+                            <span>{curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}</span>
+                          </div>
+                          {out && m.status === "FAILED" && (
+                            <div className="mt-1 text-[10px] flex items-start gap-1 text-rose-600 bg-rose-500/10 border border-rose-500/30 rounded-md px-2 py-1">
+                              <AlertTriangle className="size-3 mt-0.5 shrink-0" />
+                              <span>
+                                Belum terkirim{m.error_code ? ` (kode ${m.error_code})` : ""}.{" "}
+                                {m.error_message || "Cek nomor tujuan dan konfigurasi Twilio."}{" "}
+                                Buka <a href="/settings" className="underline">Settings → WhatsApp Gateway</a> untuk cek log.
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        )}
+                      </div>
+                    </React.Fragment>
+                  );
+                });
+  }, [messages, profiles, activeContactName, active?.id]);
   const activeIsWebinar = active ? isWebinarConv(active) : false;
   const [webinarReplies, setWebinarReplies] = useState<WebinarReply[]>([]);
   useEffect(() => {
@@ -559,7 +856,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
 
   async function markUnread(convId: string) {
-    const current = conversations.find((c) => c.id === convId);
+    const current = conversationsRef.current.find((c) => c.id === convId);
     const next = (current?.unread_count || 0) > 0 ? 0 : 1;
     setConversations((prev) => prev.map((c) => c.id === convId ? { ...c, unread_count: next } : c));
     const { error } = await supabase.from("conversations").update({ unread_count: next }).eq("id", convId);
@@ -874,83 +1171,12 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                 Belum ada percakapan{mineOnly ? " yang ditugaskan kepada Anda." : "."}
               </div>
             )}
-            {filtered.map((c) => {
-              const stage = stages.find((s) => s.id === c.contact?.stage_id);
-              const sla = slaTone(c);
-              const slaCls = sla === "ok" ? "border-l-emerald-500" : sla === "warn" ? "border-l-amber-500" : sla === "danger" ? "border-l-rose-500" : "border-l-transparent";
-              const temp = c.contact?.lead_temperature || null;
-              // Warna bar list mengikuti prioritas lead, template baris tetap sama.
-              const tempStyle = temp
-                ? { borderLeftColor: tempColor(temp), backgroundColor: tempColor(temp) + "0F" }
-                : undefined;
-              return (
-                <button key={c.id}
-                  onClick={() => { if (longPressFired.current) { longPressFired.current = false; return; } setActiveId(c.id); }}
-                  onPointerDown={() => startLongPress(c.id)}
-                  onPointerUp={cancelLongPress}
-                  onPointerLeave={cancelLongPress}
-                  onPointerCancel={cancelLongPress}
-                  onContextMenu={(e) => { e.preventDefault(); markUnread(c.id); }}
-                  className={cn("w-full text-left px-4 py-3 border-b border-l-4 hover:bg-accent/60 flex flex-col gap-1 transition-colors select-none touch-none",
-                    !temp && slaCls,
-                    activeId === c.id && "bg-accent")}
-                  style={activeId === c.id ? undefined : tempStyle}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-sm truncate">
-                      {c.contact?.full_name || "Tanpa nama"}
-                    </span>
-                    <span className="flex items-center gap-1 shrink-0">
-                      <span
-                        role="button"
-                        title={c.unread_count > 0 ? "Tandai sudah dibaca" : "Tandai belum dibaca (atau tahan)"}
-                        onClick={(e) => { e.stopPropagation(); markUnread(c.id); }}
-                        className="opacity-60 hover:opacity-100 p-1 rounded hover:bg-background/60 cursor-pointer">
-                        <MailOpen className="size-3" />
-                      </span>
-                      {c.unread_count > 0 && (
-                        <span className="text-[10px] bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 glow-primary">
-                          {c.unread_count}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-
-                  <div className="text-[11px] text-muted-foreground">{c.contact?.whatsapp_number}</div>
-                  <div className="text-xs text-muted-foreground truncate">{c.last_message_preview || "—"}</div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {c.contact?.lead_temperature && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1"
-                        style={{ backgroundColor: tempColor(c.contact.lead_temperature) + "22", color: tempColor(c.contact.lead_temperature) }}>
-                        <Flame className="size-2.5" /> {tempLabel(c.contact.lead_temperature)}
-                      </span>
-                    )}
-                    {isWebinarConv(c) && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-blue-600 text-white inline-flex items-center gap-1">
-                        <Video className="size-2.5" /> WEBINAR
-                      </span>
-                    )}
-                    {stage && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ backgroundColor: (stage.color || "#888") + "20", color: stage.color || "inherit" }}>
-                        {stage.name}
-                      </span>
-                    )}
-                    {c.assigned_agent_id ? (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 dark:text-blue-300 flex items-center gap-1">
-                        <UserIcon className="size-2.5" /> {agentName(c.assigned_agent_id)}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300">
-                        Belum ditugaskan
-                      </span>
-                    )}
-                    <span className="text-[10px] text-muted-foreground ml-auto">
-                      {c.last_message_at && formatDistanceToNow(new Date(c.last_message_at), { addSuffix: true, locale: idLocale })}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+            {listRows}
+            {visibleCount < filtered.length && (
+              <div ref={sentinelRef} className="p-3 text-center text-[11px] text-muted-foreground">
+                Scroll untuk memuat lebih banyak… ({visibleCount}/{filtered.length})
+              </div>
+            )}
           </div>
         </div>
 
@@ -1180,132 +1406,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
               </header>
 
               <div ref={scrollRef} className="flex-1 overflow-auto p-4 space-y-3 bg-muted/30">
-                {messages.map((m, idx) => {
-                  const prev = idx > 0 ? messages[idx - 1] : null;
-                  const curDate = new Date(m.sent_at);
-                  const prevDate = prev ? new Date(prev.sent_at) : null;
-                  const sameDay = prevDate &&
-                    curDate.getFullYear() === prevDate.getFullYear() &&
-                    curDate.getMonth() === prevDate.getMonth() &&
-                    curDate.getDate() === prevDate.getDate();
-                  const showSep = !sameDay;
-                  const today = new Date();
-                  const yest = new Date(); yest.setDate(today.getDate() - 1);
-                  const isSameDate = (a: Date, b: Date) =>
-                    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-                  let sepLabel = "";
-                  if (showSep) {
-                    if (isSameDate(curDate, today)) sepLabel = "Hari ini";
-                    else if (isSameDate(curDate, yest)) sepLabel = "Kemarin";
-                    else {
-                      const diffDays = Math.floor((today.getTime() - curDate.getTime()) / 86400000);
-                      sepLabel = diffDays < 7
-                        ? curDate.toLocaleDateString("id-ID", { weekday: "long" })
-                        : curDate.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: curDate.getFullYear() !== today.getFullYear() ? "numeric" : undefined });
-                    }
-                  }
-                  const separator = showSep ? (
-                    <div key={`sep-${m.id}`} className="sticky top-2 z-10 flex justify-center my-2">
-                      <span className="text-[11px] font-medium px-3 py-1 rounded-full bg-background/80 backdrop-blur border shadow-sm text-muted-foreground">
-                        {sepLabel}
-                      </span>
-                    </div>
-                  ) : null;
-
-                  if (m.type === "INTERNAL_NOTE") {
-                    return (
-                      <React.Fragment key={m.id}>
-                        {separator}
-                        <div className="flex justify-center">
-                          <div className="max-w-[85%] rounded-xl border border-amber-400/50 bg-amber-100/70 dark:bg-amber-500/10 px-3 py-2 text-xs shadow-sm">
-                            <div className="flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 mb-1">
-                              <StickyNote className="size-3" />
-                              Catatan Internal · {agentName(m.sent_by_id)}
-                            </div>
-                            <div className="whitespace-pre-wrap break-words text-amber-900 dark:text-amber-100">{m.content}</div>
-                            <div className="text-[10px] opacity-60 mt-1 text-right">
-                              {curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                            </div>
-                          </div>
-                        </div>
-                      </React.Fragment>
-                    );
-                  }
-                  const out = m.direction === "OUTBOUND";
-                  // Label pengirim STRICT berdasarkan siapa yang mengetik/mengirim pesan
-                  // (messages.sent_by_id). Jangan pernah fallback ke assigned_agent atau
-                  // last_replied_by — kalau null artinya dikirim oleh sistem/bot.
-                  const senderLabel = out
-                    ? (m.sent_by_id ? agentName(m.sent_by_id) : "Sistem")
-                    : (active.contact?.full_name || "Pelanggan");
-                  const isSticker = m.type === "STICKER";
-                  return (
-                    <React.Fragment key={m.id}>
-                      {separator}
-                      <div className={cn("flex flex-col gap-0.5", out ? "items-end" : "items-start")}>
-                        <span className="text-[10px] px-1 text-muted-foreground">
-                          {senderLabel}
-                        </span>
-                        {isSticker && m.media_url ? (
-                          <div className="max-w-[40%]">
-                            <img src={m.media_url} alt="sticker" className="max-h-40 object-contain" />
-                            <div className="text-[10px] opacity-60 mt-0.5 text-right">
-                              {curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                            </div>
-                          </div>
-                        ) : (
-                        <div className={cn("max-w-[75%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words shadow-sm",
-                          out ? "bg-chat-out text-chat-out-foreground rounded-br-sm"
-                              : "bg-chat-in text-chat-in-foreground border rounded-bl-sm")}>
-                          {m.media_url && m.type === "IMAGE" && (
-                            <a href={m.media_url} target="_blank" rel="noreferrer" className="block mb-1">
-                              <img src={m.media_url} alt="attachment" className="max-h-64 rounded-lg object-cover" />
-                            </a>
-                          )}
-                          {m.media_url && m.type === "VIDEO" && (
-                            <video src={m.media_url} controls className="max-h-64 rounded-lg mb-1 max-w-full" />
-                          )}
-                          {m.media_url && (m.type === "AUDIO" || m.type === "VOICE") && (
-                            <div className="flex items-center gap-2 mb-1">
-                              {m.type === "VOICE" && <Mic className="size-3.5 shrink-0 opacity-70" />}
-                              <audio src={m.media_url} controls className="max-w-full" />
-                            </div>
-                          )}
-                          {m.media_url && m.type === "DOCUMENT" && (
-                            <a href={m.media_url} target="_blank" rel="noreferrer"
-                              className="flex items-center gap-2 mb-1 px-2 py-1.5 rounded-lg bg-background/40 border border-white/20 hover:bg-background/60 text-xs">
-                              <FileText className="size-4 shrink-0" />
-                              <span className="truncate">{m.content || "Dokumen"}</span>
-                            </a>
-                          )}
-                          {(!m.media_url || m.type === "TEXT") && m.content}
-                          {m.media_url && m.type !== "TEXT" && m.content && m.content !== "(attachment)" && (
-                            <div className="mt-1">{m.content}</div>
-                          )}
-                          <div className="text-[10px] opacity-60 mt-1 text-right flex items-center justify-end gap-1">
-                            {out && m.status === "FAILED" && (
-                              <span className="text-rose-500 font-medium">Gagal</span>
-                            )}
-                            {out && m.status === "SENT" && <span>✓</span>}
-                            {out && m.status === "DELIVERED" && <span className="text-sky-500">✓✓</span>}
-                            <span>{curDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}</span>
-                          </div>
-                          {out && m.status === "FAILED" && (
-                            <div className="mt-1 text-[10px] flex items-start gap-1 text-rose-600 bg-rose-500/10 border border-rose-500/30 rounded-md px-2 py-1">
-                              <AlertTriangle className="size-3 mt-0.5 shrink-0" />
-                              <span>
-                                Belum terkirim{m.error_code ? ` (kode ${m.error_code})` : ""}.{" "}
-                                {m.error_message || "Cek nomor tujuan dan konfigurasi Twilio."}{" "}
-                                Buka <a href="/settings" className="underline">Settings → WhatsApp Gateway</a> untuk cek log.
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        )}
-                      </div>
-                    </React.Fragment>
-                  );
-                })}
+                {messageRows}
                 {messages.length === 0 && <p className="text-center text-xs text-muted-foreground">Belum ada pesan.</p>}
 
               </div>
