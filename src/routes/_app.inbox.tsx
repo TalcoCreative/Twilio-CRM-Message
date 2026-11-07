@@ -280,7 +280,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
             if (tempIdx >= 0) { const c = prev.slice(); c[tempIdx] = m; return c; }
             return [...prev, m];
           });
-          supabase.from("conversations").update({ unread_count: 0 }).eq("id", m.conversation_id).then(() => {});
+          supabase.from("conversations").update({ unread_count: 0 }).eq("id", m.conversation_id).gt("unread_count", 0).then(() => {});
         }
       })
       .subscribe();
@@ -427,6 +427,9 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     io.observe(el);
     return () => io.disconnect();
   }, [visibleCount, filtered.length]);
+
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
 
   // Daftar chat di-memo supaya mengetik di kolom pesan tidak me-render ulang semua baris.
   const listRows = useMemo(() => (
@@ -722,7 +725,7 @@ filtered.slice(0, visibleCount).map((c) => {
 
 
   async function markUnread(convId: string) {
-    const current = conversations.find((c) => c.id === convId);
+    const current = conversationsRef.current.find((c) => c.id === convId);
     const next = (current?.unread_count || 0) > 0 ? 0 : 1;
     setConversations((prev) => prev.map((c) => c.id === convId ? { ...c, unread_count: next } : c));
     const { error } = await supabase.from("conversations").update({ unread_count: next }).eq("id", convId);
