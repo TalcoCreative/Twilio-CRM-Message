@@ -413,6 +413,102 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     return "danger";
   }
 
+  // Hanya render sebagian daftar chat; sisanya dimuat saat di-scroll ke bawah.
+  const PAGE = 40;
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+  useEffect(() => { setVisibleCount(PAGE); }, [search, filterUnread, filterUnassigned, filterWebinar, filterStageId, filterAgentId, filterTemp, sortBy, mineOnly]);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setVisibleCount((v) => v + PAGE);
+    }, { rootMargin: "300px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visibleCount, filtered.length]);
+
+  // Daftar chat di-memo supaya mengetik di kolom pesan tidak me-render ulang semua baris.
+  const listRows = useMemo(() => (
+filtered.slice(0, visibleCount).map((c) => {
+              const stage = stages.find((s) => s.id === c.contact?.stage_id);
+              const sla = slaTone(c);
+              const slaCls = sla === "ok" ? "border-l-emerald-500" : sla === "warn" ? "border-l-amber-500" : sla === "danger" ? "border-l-rose-500" : "border-l-transparent";
+              const temp = c.contact?.lead_temperature || null;
+              // Warna bar list mengikuti prioritas lead, template baris tetap sama.
+              const tempStyle = temp
+                ? { borderLeftColor: tempColor(temp), backgroundColor: tempColor(temp) + "0F" }
+                : undefined;
+              return (
+                <button key={c.id}
+                  onClick={() => { if (longPressFired.current) { longPressFired.current = false; return; } setActiveId(c.id); }}
+                  onPointerDown={() => startLongPress(c.id)}
+                  onPointerUp={cancelLongPress}
+                  onPointerLeave={cancelLongPress}
+                  onPointerCancel={cancelLongPress}
+                  onContextMenu={(e) => { e.preventDefault(); markUnread(c.id); }}
+                  className={cn("w-full text-left px-4 py-3 border-b border-l-4 hover:bg-accent/60 flex flex-col gap-1 transition-colors select-none touch-none",
+                    !temp && slaCls,
+                    activeId === c.id && "bg-accent")}
+                  style={activeId === c.id ? undefined : tempStyle}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm truncate">
+                      {c.contact?.full_name || "Tanpa nama"}
+                    </span>
+                    <span className="flex items-center gap-1 shrink-0">
+                      <span
+                        role="button"
+                        title={c.unread_count > 0 ? "Tandai sudah dibaca" : "Tandai belum dibaca (atau tahan)"}
+                        onClick={(e) => { e.stopPropagation(); markUnread(c.id); }}
+                        className="opacity-60 hover:opacity-100 p-1 rounded hover:bg-background/60 cursor-pointer">
+                        <MailOpen className="size-3" />
+                      </span>
+                      {c.unread_count > 0 && (
+                        <span className="text-[10px] bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 glow-primary">
+                          {c.unread_count}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] text-muted-foreground">{c.contact?.whatsapp_number}</div>
+                  <div className="text-xs text-muted-foreground truncate">{c.last_message_preview || "—"}</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {c.contact?.lead_temperature && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1"
+                        style={{ backgroundColor: tempColor(c.contact.lead_temperature) + "22", color: tempColor(c.contact.lead_temperature) }}>
+                        <Flame className="size-2.5" /> {tempLabel(c.contact.lead_temperature)}
+                      </span>
+                    )}
+                    {isWebinarConv(c) && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-blue-600 text-white inline-flex items-center gap-1">
+                        <Video className="size-2.5" /> WEBINAR
+                      </span>
+                    )}
+                    {stage && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                        style={{ backgroundColor: (stage.color || "#888") + "20", color: stage.color || "inherit" }}>
+                        {stage.name}
+                      </span>
+                    )}
+                    {c.assigned_agent_id ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                        <UserIcon className="size-2.5" /> {agentName(c.assigned_agent_id)}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                        Belum ditugaskan
+                      </span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground ml-auto">
+                      {c.last_message_at && formatDistanceToNow(new Date(c.last_message_at), { addSuffix: true, locale: idLocale })}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+  ), [filtered, visibleCount, activeId, stages, webinarIds, profiles]);
+
   const active = conversations.find((c) => c.id === activeId);
   const activeIsWebinar = active ? isWebinarConv(active) : false;
   const [webinarReplies, setWebinarReplies] = useState<WebinarReply[]>([]);
@@ -941,83 +1037,12 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
                 Belum ada percakapan{mineOnly ? " yang ditugaskan kepada Anda." : "."}
               </div>
             )}
-            {filtered.map((c) => {
-              const stage = stages.find((s) => s.id === c.contact?.stage_id);
-              const sla = slaTone(c);
-              const slaCls = sla === "ok" ? "border-l-emerald-500" : sla === "warn" ? "border-l-amber-500" : sla === "danger" ? "border-l-rose-500" : "border-l-transparent";
-              const temp = c.contact?.lead_temperature || null;
-              // Warna bar list mengikuti prioritas lead, template baris tetap sama.
-              const tempStyle = temp
-                ? { borderLeftColor: tempColor(temp), backgroundColor: tempColor(temp) + "0F" }
-                : undefined;
-              return (
-                <button key={c.id}
-                  onClick={() => { if (longPressFired.current) { longPressFired.current = false; return; } setActiveId(c.id); }}
-                  onPointerDown={() => startLongPress(c.id)}
-                  onPointerUp={cancelLongPress}
-                  onPointerLeave={cancelLongPress}
-                  onPointerCancel={cancelLongPress}
-                  onContextMenu={(e) => { e.preventDefault(); markUnread(c.id); }}
-                  className={cn("w-full text-left px-4 py-3 border-b border-l-4 hover:bg-accent/60 flex flex-col gap-1 transition-colors select-none touch-none",
-                    !temp && slaCls,
-                    activeId === c.id && "bg-accent")}
-                  style={activeId === c.id ? undefined : tempStyle}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-sm truncate">
-                      {c.contact?.full_name || "Tanpa nama"}
-                    </span>
-                    <span className="flex items-center gap-1 shrink-0">
-                      <span
-                        role="button"
-                        title={c.unread_count > 0 ? "Tandai sudah dibaca" : "Tandai belum dibaca (atau tahan)"}
-                        onClick={(e) => { e.stopPropagation(); markUnread(c.id); }}
-                        className="opacity-60 hover:opacity-100 p-1 rounded hover:bg-background/60 cursor-pointer">
-                        <MailOpen className="size-3" />
-                      </span>
-                      {c.unread_count > 0 && (
-                        <span className="text-[10px] bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 glow-primary">
-                          {c.unread_count}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-
-                  <div className="text-[11px] text-muted-foreground">{c.contact?.whatsapp_number}</div>
-                  <div className="text-xs text-muted-foreground truncate">{c.last_message_preview || "—"}</div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {c.contact?.lead_temperature && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1"
-                        style={{ backgroundColor: tempColor(c.contact.lead_temperature) + "22", color: tempColor(c.contact.lead_temperature) }}>
-                        <Flame className="size-2.5" /> {tempLabel(c.contact.lead_temperature)}
-                      </span>
-                    )}
-                    {isWebinarConv(c) && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-blue-600 text-white inline-flex items-center gap-1">
-                        <Video className="size-2.5" /> WEBINAR
-                      </span>
-                    )}
-                    {stage && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ backgroundColor: (stage.color || "#888") + "20", color: stage.color || "inherit" }}>
-                        {stage.name}
-                      </span>
-                    )}
-                    {c.assigned_agent_id ? (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 dark:text-blue-300 flex items-center gap-1">
-                        <UserIcon className="size-2.5" /> {agentName(c.assigned_agent_id)}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300">
-                        Belum ditugaskan
-                      </span>
-                    )}
-                    <span className="text-[10px] text-muted-foreground ml-auto">
-                      {c.last_message_at && formatDistanceToNow(new Date(c.last_message_at), { addSuffix: true, locale: idLocale })}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+            {listRows}
+            {visibleCount < filtered.length && (
+              <div ref={sentinelRef} className="p-3 text-center text-[11px] text-muted-foreground">
+                Scroll untuk memuat lebih banyak… ({visibleCount}/{filtered.length})
+              </div>
+            )}
           </div>
         </div>
 
