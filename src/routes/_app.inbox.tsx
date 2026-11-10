@@ -18,7 +18,14 @@ import { getCached, setCached } from "@/lib/data-cache";
 import { LEAD_TEMPERATURES, tempColor, tempLabel } from "@/lib/lead-temperature";
 
 export const Route = createFileRoute("/_app/inbox")({
-  head: () => ({ meta: [{ title: "Inbox — Husada CRM" }] }),
+  head: () => ({ meta: [
+    { title: "Inbox — Husada CRM" },
+    { name: "description", content: "Percakapan WhatsApp pasien dan tim RS Husada." },
+    { property: "og:title", content: "Inbox — Husada CRM" },
+    { property: "og:description", content: "Percakapan WhatsApp pasien dan tim RS Husada." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
   validateSearch: (s: Record<string, unknown>) => ({ c: typeof s.c === "string" ? s.c : undefined }),
   component: () => <InboxView mineOnly={false} />,
 });
@@ -54,9 +61,11 @@ type Product = { id: string; name: string };
 type ComposeMode = "reply" | "note";
 
 export function InboxView({ mineOnly }: { mineOnly: boolean }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { isFirstResponse } = useRole();
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loadingConversations, setLoadingConversations] = useState(true);
+  const [conversationLoadError, setConversationLoadError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
@@ -84,7 +93,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const convCacheKey = `inbox:convs:${mineOnly ? user?.id ?? "none" : "team"}`;
+  const convCacheKey = `inbox:convs:${user?.id ?? "none"}:${mineOnly ? "mine" : "team"}`;
 
   // Cegah reload penuh bertumpuk: realtime bisa memicu puluhan event per menit.
   const loadingConvsRef = useRef(false);
@@ -102,10 +111,15 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
 
   async function loadConversations() {
     // Kalau My Inbox tapi user belum ready, jangan fetch — hindari flash "semua chat".
-    if (mineOnly && !user) { setConversations([]); return; }
+    if (authLoading || !user) return;
     if (loadingConvsRef.current) { reloadQueuedRef.current = true; return; }
     loadingConvsRef.current = true;
-    try { await loadConversationsInner(); } finally {
+    setLoadingConversations(true);
+    setConversationLoadError(null);
+    try { await loadConversationsInner(); } catch {
+      setConversationLoadError("Chat gagal dimuat. Periksa koneksi lalu coba lagi; percakapan Anda tidak dihapus.");
+    } finally {
+      setLoadingConversations(false);
       loadingConvsRef.current = false;
       if (reloadQueuedRef.current) { reloadQueuedRef.current = false; scheduleReload(1500); }
     }
@@ -125,13 +139,14 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
         .range(from, from + pageSize - 1);
       if (mineOnly && user) q = q.eq("assigned_agent_id", user.id);
       const { data, error } = await q;
-      if (error || !data || data.length === 0) break;
+      if (error) throw error;
+      if (!data) throw new Error("Tidak ada respons saat memuat chat");
+      if (data.length === 0) break;
       all.push(...data);
       if (progressive) setConversations(all.slice() as any);
       if (data.length < pageSize) break;
       from += pageSize;
     }
-    if (all.length === 0 && hasConvsRef.current) return; // gagal jaringan — pertahankan data lama
     setCached(convCacheKey, all);
     hasConvsRef.current = all.length > 0;
     setConversations(all as any);
@@ -172,6 +187,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
   }
 
   useEffect(() => {
+    if (authLoading || !user) return;
     // Tampilkan data cache dulu (instan), baru refresh di belakang layar.
     const cachedConvs = getCached<any[]>(convCacheKey);
     hasConvsRef.current = !!cachedConvs?.length;
@@ -180,7 +196,7 @@ export function InboxView({ mineOnly }: { mineOnly: boolean }) {
     if (cachedMeta) applyMeta(cachedMeta);
     loadConversations();
     loadMeta();
-  }, [mineOnly, user?.id]);
+  }, [mineOnly, user?.id, authLoading]);
 
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === "visible") scheduleReload(500); };
@@ -1160,13 +1176,22 @@ filtered.slice(0, visibleCount).map((c) => {
               )}
             </div>
             <div className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1">
-              <span className="inline-block size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live · {filtered.length}/{conversations.length} percakapan
+              {loadingConversations ? <Loader2 className="size-3 animate-spin" /> : <span className="inline-block size-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+              {loadingConversations ? "Memuat" : conversationLoadError ? "Gagal memuat" : "Live"} · {filtered.length}/{conversations.length} percakapan
               {isFirstResponse && <span className="ml-2 px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300">FR Mode</span>}
             </div>
           </div>
           <div className="flex-1 overflow-auto">
-            {filtered.length === 0 && (
+            {conversationLoadError && (
+              <div role="alert" className="p-4 text-center text-sm text-muted-foreground">
+                <p>{conversationLoadError}</p>
+                <Button variant="outline" size="sm" className="mt-3" disabled={loadingConversations} onClick={() => loadConversations()}>Coba lagi</Button>
+              </div>
+            )}
+            {loadingConversations && conversations.length === 0 && (
+              <div role="status" className="p-6 flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Memuat percakapan…</div>
+            )}
+            {!loadingConversations && !conversationLoadError && filtered.length === 0 && (
               <div className="p-6 text-center text-sm text-muted-foreground">
                 Belum ada percakapan{mineOnly ? " yang ditugaskan kepada Anda." : "."}
               </div>
