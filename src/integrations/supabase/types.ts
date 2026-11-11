@@ -1097,6 +1097,8 @@ export type Database = {
       }
       fr_can_see_contact: { Args: { _contact_id: string }; Returns: boolean }
       fr_can_see_conversation: { Args: { _conv_id: string }; Returns: boolean }
+      fr_user_ids: { Args: never; Returns: string[] }
+      fr_visible_contact_ids: { Args: never; Returns: string[] }
       fr_webinar_locked: {
         Args: { _conv_id: string; _user_id: string }
         Returns: boolean

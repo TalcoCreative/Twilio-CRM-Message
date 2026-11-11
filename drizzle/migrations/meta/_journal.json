@@ -15,6 +15,13 @@
       "when": 1791521907090,
       "tag": "0001_add_webinar_thanks_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794381763205,
+      "tag": "0002_fast_fr_rls",
+      "breakpoints": true
     }
   ]
 }
